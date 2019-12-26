@@ -5,6 +5,7 @@ import Quantification.MethylationLevelSampler;
 import Quantification.OverdispersionSampler;
 import SeqDataModel.BackgroundExpression;
 import SeqDataModel.ReadsExpectation;
+import org.apache.commons.math3.distribution.GammaDistribution;
 
 import java.io.*;
 import java.text.DecimalFormat;
@@ -187,30 +188,37 @@ public class MethylationDifference {
                 ctrlIPExpectation = geneReadsExpectations[2];
                 ctrlINPUTExpectation = geneReadsExpectations[3];
                 geneReadsExpectations = null;
-                // initialize two models for a gene
-                sameMethylationLevelModel = new SameMethylationLevelModel(this.tretMethylationLevelSampler, this.ctrlMethylationLevelSampler,
-                                                                          this.tretIPOverdispersionSampler, this.tretINPUTOverdispersionSampler,
-                                                                          this.ctrlIPOverdispersionSampler, this.ctrlINPUTOverdispersionSampler,
-                                                                          treatmentBkgExpSampler, controlBkgExpSampler);
-                diffMethylationLevelModel = new DiffMethylationLevelModel(this.tretMethylationLevelSampler, this.ctrlMethylationLevelSampler,
-                                                                          this.tretIPOverdispersionSampler, this.tretINPUTOverdispersionSampler,
-                                                                          this.ctrlIPOverdispersionSampler, this.ctrlINPUTOverdispersionSampler,
-                                                                          treatmentBkgExpSampler, controlBkgExpSampler);
 
-                // set gene reads count for each model
-                sameMethylationLevelModel.setTreatmentControlGeneReads(tretIPReads, tretINPUTReads, ctrlIPReads, ctrlINPUTReads,
-                        tretIPExpectation, tretINPUTExpectation, ctrlIPExpectation, ctrlINPUTExpectation);
-                diffMethylationLevelModel.setTreatmentControlGeneReads(tretIPReads, tretINPUTReads, ctrlIPReads, ctrlINPUTReads,
-                        tretIPExpectation, tretINPUTExpectation, ctrlIPExpectation, ctrlINPUTExpectation);
-                // first time sampling, set sampling list for each model
-                this.setModelSamplingList(sameMethylationLevelModel, diffMethylationLevelModel, geneIdx);
-                this.sampling(sameMethylationLevelModel, diffMethylationLevelModel, false);
-                // estimate pseudo prior distribution parameters and start second time sampling
                 try {
+                    // initialize two models for a gene
+                    sameMethylationLevelModel = new SameMethylationLevelModel(this.tretMethylationLevelSampler, this.ctrlMethylationLevelSampler,
+                                                                              this.tretIPOverdispersionSampler, this.tretINPUTOverdispersionSampler,
+                                                                              this.ctrlIPOverdispersionSampler, this.ctrlINPUTOverdispersionSampler,
+                                                                              treatmentBkgExpSampler, controlBkgExpSampler);
+                    diffMethylationLevelModel = new DiffMethylationLevelModel(this.tretMethylationLevelSampler, this.ctrlMethylationLevelSampler,
+                                                                              this.tretIPOverdispersionSampler, this.tretINPUTOverdispersionSampler,
+                                                                              this.ctrlIPOverdispersionSampler, this.ctrlINPUTOverdispersionSampler,
+                                                                              treatmentBkgExpSampler, controlBkgExpSampler);
+                    // set gene reads count for each model
+                    sameMethylationLevelModel.setTreatmentControlGeneReads(tretIPReads, tretINPUTReads, ctrlIPReads, ctrlINPUTReads,
+                            tretIPExpectation, tretINPUTExpectation, ctrlIPExpectation, ctrlINPUTExpectation);
+                    diffMethylationLevelModel.setTreatmentControlGeneReads(tretIPReads, tretINPUTReads, ctrlIPReads, ctrlINPUTReads,
+                            tretIPExpectation, tretINPUTExpectation, ctrlIPExpectation, ctrlINPUTExpectation);
+                    // first time sampling, set sampling list for each model
+                    this.setModelSamplingList(sameMethylationLevelModel, diffMethylationLevelModel, geneIdx);
+                    selectResult = this.sampling(sameMethylationLevelModel, diffMethylationLevelModel, false);
+
+                    // estimate pseudo prior distribution parameters and start the second time sampling
                     sameMethylationLevelModel.setModelParameterPseudoPrior();
                     diffMethylationLevelModel.setModelParameterPseudoPrior();
                     this.setModelSamplingList(sameMethylationLevelModel, diffMethylationLevelModel, geneIdx);
-                    selectResult = this.sampling(sameMethylationLevelModel, diffMethylationLevelModel, true);
+                    this.sampling(sameMethylationLevelModel, diffMethylationLevelModel, true);
+
+//                    // the third time
+//                    sameMethylationLevelModel.setModelParameterPseudoPrior();
+//                    diffMethylationLevelModel.setModelParameterPseudoPrior();
+//                    this.setModelSamplingList(sameMethylationLevelModel, diffMethylationLevelModel, geneIdx);
+//                    selectResult = this.sampling(sameMethylationLevelModel, diffMethylationLevelModel, true);
 
                     // calculate same methylation level model posterior density and diff methylation level model posterior density
                     double diffMethModelProba = this.differentiation(selectResult);
@@ -420,23 +428,24 @@ public class MethylationDifference {
         m1CtrlBkgExp[0] = this.ctrlGeneBackgroundExpression[geneIdx];
         m2CtrlBkgExp[0] = this.ctrlGeneBackgroundExpression[geneIdx];
 
+        GammaDistribution gd = new GammaDistribution(0.3, 0.3);
         m1TretIPOverdispersion = new double[this.samplingTime];
         m2TretIPOverdispersion = new double[this.samplingTime];
-        m1TretIPOverdispersion[0] = 0.1;
-        m2TretIPOverdispersion[0] = 0.1;
+        m1TretIPOverdispersion[0] = 0.1; // gd.sample();
+        m2TretIPOverdispersion[0] = 0.1; // gd.sample();
         m1TretINPUTOverdispersion = new double[this.samplingTime];
         m2TretINPUTOverdispersion = new double[this.samplingTime];
-        m1TretINPUTOverdispersion[0] = 0.1;
-        m2TretINPUTOverdispersion[0] = 0.1;
+        m1TretINPUTOverdispersion[0] = 0.1; // gd.sample();
+        m2TretINPUTOverdispersion[0] = 0.1; // gd.sample();
 
         m1CtrlIPOverdispersion = new double[this.samplingTime];
         m2CtrlIPOverdispersion = new double[this.samplingTime];
-        m1CtrlIPOverdispersion[0] = 0.1;
-        m2CtrlIPOverdispersion[0] = 0.1;
+        m1CtrlIPOverdispersion[0] = 0.1; // gd.sample();
+        m2CtrlIPOverdispersion[0] = 0.1; // gd.sample();
         m1CtrlINPUTOverdispersion = new double[this.samplingTime];
         m2CtrlINPUTOverdispersion = new double[this.samplingTime];
-        m1CtrlINPUTOverdispersion[0] = 0.1;
-        m2CtrlINPUTOverdispersion[0] = 0.1;
+        m1CtrlINPUTOverdispersion[0] = 0.1; // gd.sample();
+        m2CtrlINPUTOverdispersion[0] = 0.1; // gd.sample();
         sameMethylationLevelModel.setSamplingList(m1TretIPOverdispersion, m1TretINPUTOverdispersion, m1CtrlIPOverdispersion, m1CtrlINPUTOverdispersion, m1TretBkgExp, m1CtrlBkgExp, m1TretMethLevel, m1CtrlMethLevel);
         diffMethylationLevelModel.setSamplingList(m2TretIPOverdispersion, m2TretINPUTOverdispersion, m2CtrlIPOverdispersion, m2CtrlINPUTOverdispersion, m2TretBkgExp, m2CtrlBkgExp, m2TretMethLevel, m2CtrlMethLevel);
     }

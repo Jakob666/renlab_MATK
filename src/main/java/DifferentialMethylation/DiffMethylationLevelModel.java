@@ -247,29 +247,29 @@ public class DiffMethylationLevelModel extends ModelSelection {
                 this.tretIPOverdispersionPseudoSampler = new OverdispersionSampler(tretIPOverdispersionParams[0], tretIPOverdispersionParams[1]);
             double[] tretINPUTOverdispersionParams = PseudoGammaDistribution.estimate(this.tretINPUTOverdispersionList);
             if (tretINPUTOverdispersionParams[0] < 0.00001 | tretINPUTOverdispersionParams[1] < 0.00001)
-                this.tretIPOverdispersionPseudoSampler = this.tretIPOverdispersionSampler;
+                this.tretINPUTOverdispersionPseudoSampler = this.tretINPUTOverdispersionSampler;
             else
                 this.tretINPUTOverdispersionPseudoSampler = new OverdispersionSampler(tretINPUTOverdispersionParams[0], tretINPUTOverdispersionParams[1]);
 
             double[] ctrlIPOverdispersionParams = PseudoGammaDistribution.estimate(this.ctrlIPOverdispersionList);
             if (ctrlIPOverdispersionParams[0] < 0.00001 | ctrlIPOverdispersionParams[1] < 0.00001)
-                this.tretIPOverdispersionPseudoSampler = this.tretIPOverdispersionSampler;
+                this.ctrlIPOverdispersionPseudoSampler = this.ctrlIPOverdispersionSampler;
             else
                 this.ctrlIPOverdispersionPseudoSampler = new OverdispersionSampler(ctrlIPOverdispersionParams[0], ctrlIPOverdispersionParams[1]);
             double[] ctrlINPUTOverdispersionParams = PseudoGammaDistribution.estimate(this.ctrlINPUTOverdispersionList);
             if (ctrlINPUTOverdispersionParams[0] < 0.00001 | ctrlINPUTOverdispersionParams[1] < 0.00001)
-                this.tretIPOverdispersionPseudoSampler = this.tretIPOverdispersionSampler;
+                this.ctrlINPUTOverdispersionPseudoSampler = this.ctrlINPUTOverdispersionSampler;
             else
                 this.ctrlINPUTOverdispersionPseudoSampler = new OverdispersionSampler(ctrlINPUTOverdispersionParams[0], ctrlINPUTOverdispersionParams[1]);
 
             double[] tretBkgExpParams = PseudoLogNormalDistribution.estimate(this.tretBkgExpList);
             if (tretBkgExpParams[0] < 0.00001 | tretBkgExpParams[1] < 0.00001)
-                this.tretIPOverdispersionPseudoSampler = this.tretIPOverdispersionSampler;
+                this.treatmentBackgroundExpressionPseudoSampler = this.treatmentBackgroundExpressionSampler;
             else
                 this.treatmentBackgroundExpressionPseudoSampler = new BackgroundExpressionSampler(tretBkgExpParams[0], tretBkgExpParams[1]);
             double[] ctrlBkgExpParams = PseudoLogNormalDistribution.estimate(this.ctrlBkgExpList);
             if (ctrlBkgExpParams[0] < 0.00001 | ctrlBkgExpParams[1] < 0.00001)
-                this.tretIPOverdispersionPseudoSampler = this.tretIPOverdispersionSampler;
+                this.controlBackgroundExpressionPseudoSampler = this.controlBackgroundExpressionSampler;
             else
                 this.controlBackgroundExpressionPseudoSampler = new BackgroundExpressionSampler(ctrlBkgExpParams[0], ctrlBkgExpParams[1]);
 
