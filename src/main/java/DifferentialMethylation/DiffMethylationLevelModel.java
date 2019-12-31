@@ -1,7 +1,7 @@
 package DifferentialMethylation;
 
 import DifferentialMethylation.PseudoPrior.PseudoBetaDistribution;
-import DifferentialMethylation.PseudoPrior.PseudoGammaDistribution;
+import DifferentialMethylation.PseudoPrior.PseudoInverseGammaDistribution;
 import DifferentialMethylation.PseudoPrior.PseudoLogNormalDistribution;
 import Quantification.BackgroundExpressionSampler;
 import Quantification.MethylationLevelSampler;
@@ -215,6 +215,7 @@ public class DiffMethylationLevelModel extends ModelSelection {
 
     /**
      * use the first-time sampling result to regress pseudo prior for each parameters
+     * Deprecated!
      */
     @Override
     protected void setModelParameterPseudoPrior() {
@@ -240,24 +241,47 @@ public class DiffMethylationLevelModel extends ModelSelection {
             else
                 this.ctrlMethylationLevelPseudoSampler = new MethylationLevelSampler(ctrlMethylationParams[0], ctrlMethylationParams[1]);
 
-            double[] tretIPOverdispersionParams = PseudoGammaDistribution.estimate(this.tretIPOverdispersionList);
-            if (tretIPOverdispersionParams[0] < 0.00001 | tretIPOverdispersionParams[1] < 0.00001)
+            // TODO:测试
+//            double[] tretIPOverdispersionParams = PseudoGammaDistribution.estimate(this.tretIPOverdispersionList);
+//            if (tretIPOverdispersionParams[0] < 0.00001 | tretIPOverdispersionParams[1] < 0.00001)
+//                this.tretIPOverdispersionPseudoSampler = this.tretIPOverdispersionSampler;
+//            else
+//                this.tretIPOverdispersionPseudoSampler = new OverdispersionSampler(tretIPOverdispersionParams[0], tretIPOverdispersionParams[1]);
+//            double[] tretINPUTOverdispersionParams = PseudoGammaDistribution.estimate(this.tretINPUTOverdispersionList);
+//            if (tretINPUTOverdispersionParams[0] < 0.00001 | tretINPUTOverdispersionParams[1] < 0.00001)
+//                this.tretINPUTOverdispersionPseudoSampler = this.tretINPUTOverdispersionSampler;
+//            else
+//                this.tretINPUTOverdispersionPseudoSampler = new OverdispersionSampler(tretINPUTOverdispersionParams[0], tretINPUTOverdispersionParams[1]);
+//
+//            double[] ctrlIPOverdispersionParams = PseudoGammaDistribution.estimate(this.ctrlIPOverdispersionList);
+//            if (ctrlIPOverdispersionParams[0] < 0.00001 | ctrlIPOverdispersionParams[1] < 0.00001)
+//                this.ctrlIPOverdispersionPseudoSampler = this.ctrlIPOverdispersionSampler;
+//            else
+//                this.ctrlIPOverdispersionPseudoSampler = new OverdispersionSampler(ctrlIPOverdispersionParams[0], ctrlIPOverdispersionParams[1]);
+//            double[] ctrlINPUTOverdispersionParams = PseudoGammaDistribution.estimate(this.ctrlINPUTOverdispersionList);
+//            if (ctrlINPUTOverdispersionParams[0] < 0.00001 | ctrlINPUTOverdispersionParams[1] < 0.00001)
+//                this.ctrlINPUTOverdispersionPseudoSampler = this.ctrlINPUTOverdispersionSampler;
+//            else
+//                this.ctrlINPUTOverdispersionPseudoSampler = new OverdispersionSampler(ctrlINPUTOverdispersionParams[0], ctrlINPUTOverdispersionParams[1]);
+
+            double[] tretIPOverdispersionParams = PseudoInverseGammaDistribution.estimate(this.tretIPOverdispersionList);
+            if (tretIPOverdispersionParams == null)
                 this.tretIPOverdispersionPseudoSampler = this.tretIPOverdispersionSampler;
             else
                 this.tretIPOverdispersionPseudoSampler = new OverdispersionSampler(tretIPOverdispersionParams[0], tretIPOverdispersionParams[1]);
-            double[] tretINPUTOverdispersionParams = PseudoGammaDistribution.estimate(this.tretINPUTOverdispersionList);
-            if (tretINPUTOverdispersionParams[0] < 0.00001 | tretINPUTOverdispersionParams[1] < 0.00001)
+            double[] tretINPUTOverdispersionParams = PseudoInverseGammaDistribution.estimate(this.tretINPUTOverdispersionList);
+            if (tretINPUTOverdispersionParams == null)
                 this.tretINPUTOverdispersionPseudoSampler = this.tretINPUTOverdispersionSampler;
             else
                 this.tretINPUTOverdispersionPseudoSampler = new OverdispersionSampler(tretINPUTOverdispersionParams[0], tretINPUTOverdispersionParams[1]);
 
-            double[] ctrlIPOverdispersionParams = PseudoGammaDistribution.estimate(this.ctrlIPOverdispersionList);
-            if (ctrlIPOverdispersionParams[0] < 0.00001 | ctrlIPOverdispersionParams[1] < 0.00001)
+            double[] ctrlIPOverdispersionParams = PseudoInverseGammaDistribution.estimate(this.ctrlIPOverdispersionList);
+            if (ctrlIPOverdispersionParams == null)
                 this.ctrlIPOverdispersionPseudoSampler = this.ctrlIPOverdispersionSampler;
             else
                 this.ctrlIPOverdispersionPseudoSampler = new OverdispersionSampler(ctrlIPOverdispersionParams[0], ctrlIPOverdispersionParams[1]);
-            double[] ctrlINPUTOverdispersionParams = PseudoGammaDistribution.estimate(this.ctrlINPUTOverdispersionList);
-            if (ctrlINPUTOverdispersionParams[0] < 0.00001 | ctrlINPUTOverdispersionParams[1] < 0.00001)
+            double[] ctrlINPUTOverdispersionParams = PseudoInverseGammaDistribution.estimate(this.ctrlINPUTOverdispersionList);
+            if (ctrlINPUTOverdispersionParams == null)
                 this.ctrlINPUTOverdispersionPseudoSampler = this.ctrlINPUTOverdispersionSampler;
             else
                 this.ctrlINPUTOverdispersionPseudoSampler = new OverdispersionSampler(ctrlINPUTOverdispersionParams[0], ctrlINPUTOverdispersionParams[1]);

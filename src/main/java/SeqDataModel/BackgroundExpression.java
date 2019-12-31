@@ -1,5 +1,9 @@
 package SeqDataModel;
 
+import org.apache.commons.math3.distribution.LogNormalDistribution;
+
+import java.util.Arrays;
+
 public class BackgroundExpression {
     private int[][] ipGenesReads, inputGeneReads;
 
@@ -41,9 +45,7 @@ public class BackgroundExpression {
      */
     public double[] geneBackgroundExp() {
         // shape 1 × individualNumber
-//        double[] individualSizeFactors = this.getGlobalSizeFactor();
-        // TODO:当作用于实际数据时改用上一行被注释的代码
-        double[] individualSizeFactors = new double[] {1, 1, 1};//
+        double[] individualSizeFactors = this.getGlobalSizeFactor();
         // shape 1 × geneNumber
         double[] genesBkgExp = new double[this.ipGenesReads[0].length];
 
@@ -61,13 +63,13 @@ public class BackgroundExpression {
             genesBkgExp[geneIdx] = genesBkgExp[geneIdx] / individualNumber;
         }
 
-//        return genesBkgExp;
+        return genesBkgExp;
         // TODO:当作用于实际数据时改用上一行被注释的代码
-        double[] res = new double[genesBkgExp.length];
-        for (int geneIdx=0; geneIdx<genesBkgExp.length; geneIdx++) {
-            res[geneIdx] = 500;
-        }
-        return res;
+//        double[] res = new double[genesBkgExp.length];
+//        for (int geneIdx=0; geneIdx<genesBkgExp.length; geneIdx++) {
+//            res[geneIdx] = 500;
+//        }
+//        return res;
     }
 
     /**
@@ -81,29 +83,29 @@ public class BackgroundExpression {
 //            return new double[geneNumber];
 
         // genes' background expression expectation, shape 1 × geneNumber
-        double[] genesBkgExpMean = this.geneBackgroundExp();
+//        double[] genesBkgExpMean = this.geneBackgroundExp();
         // genes' background expression standard deviation, shape 1 × geneNumber
-        double[] genesBkgExpStd = new double[this.ipGenesReads[0].length];
+//        double[] genesBkgExpStd = new double[this.ipGenesReads[0].length];
 
-        double distance;
-        for (int[] individualGeneIPReads: this.ipGenesReads) {
-            for (int geneIdx=0; geneIdx<geneNumber; geneIdx++) {
-                distance = individualGeneIPReads[geneIdx] - genesBkgExpMean[geneIdx];
-                genesBkgExpStd[geneIdx] += Math.pow(distance, 2);
-            }
-        }
+//        double distance;
+//        for (int[] individualGeneIPReads: this.ipGenesReads) {
+//            for (int geneIdx=0; geneIdx<geneNumber; geneIdx++) {
+//                distance = individualGeneIPReads[geneIdx] - genesBkgExpMean[geneIdx];
+//                genesBkgExpStd[geneIdx] += Math.pow(distance, 2);
+//            }
+//        }
 
-        for (int geneIdx=0; geneIdx<genesBkgExpStd.length; geneIdx++) {
-            genesBkgExpStd[geneIdx] = Math.sqrt(genesBkgExpStd[geneIdx] / (individualNumber-1));
-        }
-        genesBkgExpMean = null;
+//        for (int geneIdx=0; geneIdx<genesBkgExpStd.length; geneIdx++) {
+//            genesBkgExpStd[geneIdx] = Math.sqrt(genesBkgExpStd[geneIdx] / individualNumber);
+//        }
+//        genesBkgExpMean = null;
 
 //        return genesBkgExpStd;
 
         // TODO:当作用于实际数据时改用上方的代码
-        double[] res = new double[genesBkgExpStd.length];
-        for (int geneIdx=0; geneIdx<genesBkgExpStd.length; geneIdx++) {
-            res[geneIdx] = Math.exp(0.1);
+        double[] res = new double[this.ipGenesReads[0].length];
+        for (int geneIdx=0; geneIdx<this.ipGenesReads[0].length; geneIdx++) {
+            res[geneIdx] = 0.1;
         }
         return res;
     }

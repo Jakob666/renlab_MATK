@@ -1,10 +1,11 @@
 package Quantification;
 
-import DifferentialMethylation.CreateTask;
 import ProbabilityCalculation.ProbabilityCalculator;
 import SeqDataModel.BackgroundExpression;
 import SeqDataModel.ReadsExpectation;
 
+import java.io.*;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.concurrent.*;
 import java.util.stream.Collectors;
@@ -17,11 +18,11 @@ public class MethylationQuantification {
     private MethylationLevelSampler methLevelSampler = null;
     private OverdispersionSampler ipOverdispersionSampler = null, inputOverdispersionSampler = null;
     private BackgroundExpressionSampler[] geneBackgroundExpressionSamplers = null;
-    private int individualNumber, geneNumber, samplingTime, burnIn;
+    private int individualNumber, geneNumber, samplingTime, burnIn, threadNumber;
     private int[][] ipReads, inputReads;
     private double a, b, c, d, w, k;
-    private double[] geneBackgroundExpression, backgroundExpressionMean;
-    private double[][] ipReadsExpectation, inputReadsExpectation;
+    private double[] backgroundExpressionMean;
+    private String outputFile = null;
     private ConcurrentHashMap<Integer, String> testRecord;
 
     /**
@@ -39,7 +40,7 @@ public class MethylationQuantification {
      */
     public MethylationQuantification(int[][] ipReads, int[][] inputReads,
                                      double ipShape, double ipScale, double inputShape, double inputScale,
-                                     double methLevelShape1, double methLevelShape2, int samplingTime, int burnIn) {
+                                     double methLevelShape1, double methLevelShape2, int samplingTime, int burnIn, int threadNumber) {
         assert samplingTime > burnIn;
         // assert arrays contains same sample and gene number
         assert inputReads.length == ipReads.length && inputReads[0].length == ipReads[0].length;
@@ -55,6 +56,30 @@ public class MethylationQuantification {
         this.k = methLevelShape2;
         this.samplingTime = samplingTime;
         this.burnIn = burnIn;
+        this.threadNumber = threadNumber;
+    }
+
+    public MethylationQuantification(int[][] ipReads, int[][] inputReads,
+                                     double ipShape, double ipScale, double inputShape, double inputScale,
+                                     double methLevelShape1, double methLevelShape2, int samplingTime,
+                                     int burnIn, int threadNumber, String outputFile) {
+        assert samplingTime > burnIn;
+        // assert arrays contains same sample and gene number
+        assert inputReads.length == ipReads.length && inputReads[0].length == ipReads[0].length;
+        this.individualNumber = inputReads.length;
+        this.geneNumber = inputReads[0].length;
+        this.inputReads = inputReads;
+        this.ipReads = ipReads;
+        this.a = ipShape;
+        this.b = ipScale;
+        this.c = inputShape;
+        this.d = inputScale;
+        this.w = methLevelShape1;
+        this.k = methLevelShape2;
+        this.samplingTime = samplingTime;
+        this.burnIn = burnIn;
+        this.threadNumber = threadNumber;
+        this.outputFile = outputFile;
     }
 
     /**
@@ -63,11 +88,14 @@ public class MethylationQuantification {
     public void runExecution() {
         this.initialize();
         this.generatePosteriorDistribution();
-
+        if (this.outputFile != null)
+            this.output();
     }
 
-    public double[] getGeneBackgroundExpression() {
-        return this.geneBackgroundExpression;
+    public ArrayList<String> getTestRecord() {
+        ArrayList<String> result = new ArrayList<>();
+        this.testRecord.entrySet().stream().sorted((o1, o2) -> o1.getKey() - o2.getKey()).forEach(x -> result.add(x.getValue()));
+        return result;
     }
 
     /**
@@ -88,23 +116,11 @@ public class MethylationQuantification {
         for (int i=0; i<this.geneNumber; i++) {
             // shape and scale parameters of log-normal distribution
             double scale = Math.log(backgroundExpressionMean[i]);
-            double shape = Math.log(backgroundExpressionStd[i]);
+            double shape = backgroundExpressionStd[i];
             sampler = new BackgroundExpressionSampler(scale, shape);
             // random init background expression from corresponding distribution
             this.geneBackgroundExpressionSamplers[i] = sampler;
         }
-        // initialize genes' IP and INPUT reads expectation of each individual with methylation level,
-        // shape individualNumber × geneNumber. INPUT reads expectations will not be changed any more,
-        // but IP reads change with different methylation level
-        double[] initMethLevel = new double[this.geneNumber];
-        for (int i=0; i<this.geneNumber; i++) {
-            initMethLevel[i] = 0.1;
-        }
-        ReadsExpectation re = new ReadsExpectation(this.ipReads, this.inputReads, initMethLevel);
-        this.ipReadsExpectation = re.getIPReadsExepectation();
-        this.inputReadsExpectation = re.getINPUTReadsExpectation();
-        re = null;
-        initMethLevel = null;
     }
 
     /**
@@ -113,7 +129,7 @@ public class MethylationQuantification {
     private void generatePosteriorDistribution() {
         this.testRecord = new ConcurrentHashMap<>();
         CountDownLatch countDownLatch = new CountDownLatch(this.geneNumber);
-        ExecutorService threadPool = Executors.newFixedThreadPool(5);
+        ExecutorService threadPool = Executors.newFixedThreadPool(this.threadNumber);
         QuantifyTask task = (sampleIPReads, sampleINPUTReads, sampleIPExpectation, sampleINPUTExpectation, geneIdx) -> {
             return () -> {
                 try {
@@ -149,11 +165,11 @@ public class MethylationQuantification {
                         res[i] = String.valueOf(quantificationResult[i]);
                     }
                     String record = String.join("\t", res);
-                    System.out.println(record);
                     this.testRecord.put(geneIdx, record);
                 } catch (Exception e) {
                     e.printStackTrace();
                 } finally {
+                    System.out.println(geneIdx+1 + " / " + this.geneNumber);
                     countDownLatch.countDown();
                 }
             };
@@ -479,7 +495,6 @@ public class MethylationQuantification {
 
         double[] geneBackgroundExpressionRemainValue = null;
 
-        this.geneBackgroundExpression = new double[this.geneNumber];
         geneBackgroundExpressionRemainValue = new double[keepNum];
         System.arraycopy(backgroundExpressions, this.burnIn-1, geneBackgroundExpressionRemainValue, 0, keepNum);
 
@@ -509,7 +524,29 @@ public class MethylationQuantification {
         }
     }
 
-    public void output() {
-
+    /**
+     * output result
+     */
+    private void output() {
+        BufferedWriter bfw = null;
+        try {
+            bfw = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(new File(this.outputFile))));
+            bfw.write("# index\tmethylationLevel\tipOverdispersion\tinputOverdispersion\tbackgroundExpression\n");
+            ArrayList<Integer> sortedIdx = new ArrayList<>(this.testRecord.keySet().stream().sorted((o1, o2) -> o1 - o2).collect(Collectors.toList()));
+            for (Integer idx: sortedIdx) {
+                bfw.write(this.testRecord.get(idx));
+                bfw.newLine();
+            }
+        } catch (IOException ie) {
+            ie.printStackTrace();
+        } finally {
+            if (bfw != null) {
+                try {
+                    bfw.close();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
     }
 }

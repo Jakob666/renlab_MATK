@@ -5,7 +5,6 @@ import Quantification.MethylationLevelSampler;
 import Quantification.OverdispersionSampler;
 import SeqDataModel.BackgroundExpression;
 import SeqDataModel.ReadsExpectation;
-import org.apache.commons.math3.distribution.GammaDistribution;
 
 import java.io.*;
 import java.text.DecimalFormat;
@@ -20,7 +19,7 @@ import java.util.stream.Collectors;
  * H1: difference in methylation level
  */
 public class MethylationDifference {
-    private int individualNumber, geneNumber, samplingTime, burnIn, threadNum;
+    private int tretIndividualNumber, ctrlIndividualNumber, geneNumber, samplingTime, burnIn, threadNum;
     private int[][] treatmentIPReads, treatmentINPUTReads, controlIPReads, controlINPUTReads;
     // distribution parameters
     private double ipOverdispersionShape, ipOverdispersionScale, inputOverdispersionShape, inputOverdispersionScale,
@@ -28,7 +27,7 @@ public class MethylationDifference {
     private double[][] tretIPReadsExpectation, tretINPUTReadsExpectation, ctrlIPReadsExpectation, ctrlINPUTReadsExpectation;
     // MH sampling components, shape geneNumber × samplingTime
     private double[] tretGeneBackgroundExpression, ctrlGeneBackgroundExpression;
-    private String outputFile;
+    private String outputFile = null;
     private OverdispersionSampler tretIPOverdispersionSampler, tretINPUTOverdispersionSampler, ctrlIPOverdispersionSampler, ctrlINPUTOverdispersionSampler;
     private MethylationLevelSampler tretMethylationLevelSampler, ctrlMethylationLevelSampler;
     private BackgroundExpressionSampler[] treatmentBackgroundExpressionSamplers, controlBackgroundExpressionSamplers;
@@ -59,10 +58,10 @@ public class MethylationDifference {
                                  double methylationLevelParam1, double methylationLevelParam2,
                                  double sameMethLevelModelPriorProba, double diffMethLevelModelPriorProba,
                                  int samplingTime, int burnIn, String outputFile, int threadNumber) {
-        // checking input parameters
+        // checking input parameters, same replications in IP and INPUT sample
         assert Math.abs(sameMethLevelModelPriorProba+diffMethLevelModelPriorProba-1) < 0.00001;
         assert treatmentINPUTReads.length == treatmentIPReads.length && controlINPUTReads.length == controlIPReads.length;
-        assert treatmentINPUTReads.length == controlINPUTReads.length;
+        // treatment and control group contains same gene number in IP and INPUT
         assert treatmentINPUTReads[0].length == treatmentIPReads[0].length && controlINPUTReads[0].length == controlIPReads[0].length;
         assert treatmentINPUTReads[0].length == controlINPUTReads[0].length;
         assert samplingTime > burnIn;
@@ -71,7 +70,8 @@ public class MethylationDifference {
         this.controlIPReads = controlIPReads;
         this.treatmentINPUTReads = treatmentINPUTReads;
         this.treatmentIPReads = treatmentIPReads;
-        this.individualNumber = treatmentINPUTReads.length;
+        this.tretIndividualNumber = treatmentINPUTReads.length;
+        this.ctrlIndividualNumber = controlINPUTReads.length;
         this.geneNumber = treatmentINPUTReads[0].length;
         this.ipOverdispersionShape = ipOverdispersionShape;
         this.ipOverdispersionScale = ipOverdispersionScale;
@@ -88,13 +88,50 @@ public class MethylationDifference {
         this.outputFile = outputFile;
     }
 
+    public MethylationDifference(int[][] treatmentIPReads, int[][] treatmentINPUTReads,
+                                 int[][] controlIPReads, int[][] controlINPUTReads,
+                                 double ipOverdispersionShape, double ipOverdispersionScale,
+                                 double inputOverdispersionShape, double inputOverdispersionScale,
+                                 double methylationLevelParam1, double methylationLevelParam2,
+                                 double sameMethLevelModelPriorProba, double diffMethLevelModelPriorProba,
+                                 int samplingTime, int burnIn, int threadNumber) {
+        // checking input parameters, same replications in IP and INPUT sample
+        assert Math.abs(sameMethLevelModelPriorProba+diffMethLevelModelPriorProba-1) < 0.00001;
+        assert treatmentINPUTReads.length == treatmentIPReads.length && controlINPUTReads.length == controlIPReads.length;
+        // treatment and control group contains same gene number in IP and INPUT
+        assert treatmentINPUTReads[0].length == treatmentIPReads[0].length && controlINPUTReads[0].length == controlIPReads[0].length;
+        assert treatmentINPUTReads[0].length == controlINPUTReads[0].length;
+        assert samplingTime > burnIn;
+
+        this.controlINPUTReads = controlINPUTReads;
+        this.controlIPReads = controlIPReads;
+        this.treatmentINPUTReads = treatmentINPUTReads;
+        this.treatmentIPReads = treatmentIPReads;
+        this.tretIndividualNumber = treatmentINPUTReads.length;
+        this.ctrlIndividualNumber = controlINPUTReads.length;
+        this.geneNumber = treatmentINPUTReads[0].length;
+        this.ipOverdispersionShape = ipOverdispersionShape;
+        this.ipOverdispersionScale = ipOverdispersionScale;
+        this.inputOverdispersionShape = inputOverdispersionShape;
+        this.inputOverdispersionScale = inputOverdispersionScale;
+        this.methylationLevelParam1 = methylationLevelParam1;
+        this.methylationLevelParam2 = methylationLevelParam2;
+        this.samplingTime = samplingTime;
+        this.burnIn = burnIn;
+        this.threadNum = threadNumber;
+        this.modelSelector = new ModelSelector();
+        this.sameMethLevelModelPriorProba = sameMethLevelModelPriorProba;
+        this.diffMethLevelModelPriorProba = diffMethLevelModelPriorProba;
+    }
+
     /**
      * API function
      */
     public void runExecute() {
         this.initialize();
         this.selectModel();
-        this.output(this.outputFile);
+        if (this.outputFile != null)
+            this.output(this.outputFile);
     }
 
     /**
@@ -119,7 +156,7 @@ public class MethylationDifference {
         for (int geneIdx=0; geneIdx<this.geneNumber; geneIdx++) {
             // shape and scale parameters of log-normal distribution
             scale = Math.log(backgroundExpressionMean[geneIdx]);
-            shape = Math.log(backgroundExpressionStd[geneIdx]);
+            shape = backgroundExpressionStd[geneIdx];
             this.tretGeneBackgroundExpression[geneIdx] = backgroundExpressionMean[geneIdx];
             this.treatmentBackgroundExpressionSamplers[geneIdx] = new BackgroundExpressionSampler(scale, shape);
         }
@@ -132,7 +169,7 @@ public class MethylationDifference {
         this.controlBackgroundExpressionSamplers = new BackgroundExpressionSampler[this.geneNumber];
         for (int geneIdx=0; geneIdx<this.geneNumber; geneIdx++) {
             scale = Math.log(backgroundExpressionMean[geneIdx]);
-            shape = Math.log(backgroundExpressionStd[geneIdx]);
+            shape = backgroundExpressionStd[geneIdx];
             this.ctrlGeneBackgroundExpression[geneIdx] = backgroundExpressionMean[geneIdx];
             this.controlBackgroundExpressionSamplers[geneIdx] = new BackgroundExpressionSampler(scale, shape);
         }
@@ -164,7 +201,7 @@ public class MethylationDifference {
         CountDownLatch countDown = new CountDownLatch(this.geneNumber);
         CreateTask ct = (geneIdx -> {
             return () -> {
-                System.out.println(geneIdx);
+                System.out.println(geneIdx+1 + "/" + this.geneNumber);
                 int[][] geneReadsCounts;
                 int[] tretIPReads, tretINPUTReads, ctrlIPReads, ctrlINPUTReads, selectResult;
                 double[][] geneReadsExpectations;
@@ -209,16 +246,11 @@ public class MethylationDifference {
                     selectResult = this.sampling(sameMethylationLevelModel, diffMethylationLevelModel, false);
 
                     // estimate pseudo prior distribution parameters and start the second time sampling
-                    sameMethylationLevelModel.setModelParameterPseudoPrior();
-                    diffMethylationLevelModel.setModelParameterPseudoPrior();
-                    this.setModelSamplingList(sameMethylationLevelModel, diffMethylationLevelModel, geneIdx);
-                    this.sampling(sameMethylationLevelModel, diffMethylationLevelModel, true);
-
-//                    // the third time
 //                    sameMethylationLevelModel.setModelParameterPseudoPrior();
 //                    diffMethylationLevelModel.setModelParameterPseudoPrior();
 //                    this.setModelSamplingList(sameMethylationLevelModel, diffMethylationLevelModel, geneIdx);
 //                    selectResult = this.sampling(sameMethylationLevelModel, diffMethylationLevelModel, true);
+//                    System.out.println(Arrays.stream(selectResult).skip(this.burnIn).sum());
 
                     // calculate same methylation level model posterior density and diff methylation level model posterior density
                     double diffMethModelProba = this.differentiation(selectResult);
@@ -369,12 +401,15 @@ public class MethylationDifference {
      * @return reads count, shape 1 × individualNumber
      */
     private int[][] getGeneReads(int geneIdx) {
-        int[] tretIPReads = new int[this.individualNumber], tretINPUTReads = new int[this.individualNumber],
-              ctrlIPReads = new int[this.individualNumber], ctrlINPUTReads = new int[this.individualNumber];
+        int[] tretIPReads = new int[this.tretIndividualNumber], tretINPUTReads = new int[this.tretIndividualNumber],
+              ctrlIPReads = new int[this.ctrlIndividualNumber], ctrlINPUTReads = new int[this.ctrlIndividualNumber];
 
-        for (int individualIdx=0; individualIdx<this.individualNumber; individualIdx++) {
+        for (int individualIdx=0; individualIdx<this.tretIndividualNumber; individualIdx++) {
             tretIPReads[individualIdx] = this.treatmentIPReads[individualIdx][geneIdx];
             tretINPUTReads[individualIdx] = this.treatmentINPUTReads[individualIdx][geneIdx];
+        }
+
+        for (int individualIdx=0; individualIdx<this.ctrlIndividualNumber; individualIdx++) {
             ctrlIPReads[individualIdx] = this.controlIPReads[individualIdx][geneIdx];
             ctrlINPUTReads[individualIdx] = this.controlINPUTReads[individualIdx][geneIdx];
         }
@@ -388,12 +423,15 @@ public class MethylationDifference {
      * @return reads count expectations, shape 1 × individualNumber
      */
     private double[][] getGeneExpectation(int geneIdx) {
-        double[] tretIPReads = new double[this.individualNumber], tretINPUTReads = new double[this.individualNumber],
-                 ctrlIPReads = new double[this.individualNumber], ctrlINPUTReads = new double[this.individualNumber];
+        double[] tretIPReads = new double[this.tretIndividualNumber], tretINPUTReads = new double[this.tretIndividualNumber],
+                 ctrlIPReads = new double[this.ctrlIndividualNumber], ctrlINPUTReads = new double[this.ctrlIndividualNumber];
 
-        for (int individualIdx=0; individualIdx<this.individualNumber; individualIdx++) {
+        for (int individualIdx=0; individualIdx<this.tretIndividualNumber; individualIdx++) {
             tretIPReads[individualIdx] = this.tretIPReadsExpectation[individualIdx][geneIdx];
             tretINPUTReads[individualIdx] = this.tretINPUTReadsExpectation[individualIdx][geneIdx];
+        }
+
+        for (int individualIdx=0; individualIdx<this.ctrlIndividualNumber; individualIdx++) {
             ctrlIPReads[individualIdx] = this.ctrlIPReadsExpectation[individualIdx][geneIdx];
             ctrlINPUTReads[individualIdx] = this.ctrlINPUTReadsExpectation[individualIdx][geneIdx];
         }
@@ -428,24 +466,23 @@ public class MethylationDifference {
         m1CtrlBkgExp[0] = this.ctrlGeneBackgroundExpression[geneIdx];
         m2CtrlBkgExp[0] = this.ctrlGeneBackgroundExpression[geneIdx];
 
-        GammaDistribution gd = new GammaDistribution(0.3, 0.3);
         m1TretIPOverdispersion = new double[this.samplingTime];
         m2TretIPOverdispersion = new double[this.samplingTime];
-        m1TretIPOverdispersion[0] = 0.1; // gd.sample();
-        m2TretIPOverdispersion[0] = 0.1; // gd.sample();
+        m1TretIPOverdispersion[0] = 0.1;
+        m2TretIPOverdispersion[0] = 0.1;
         m1TretINPUTOverdispersion = new double[this.samplingTime];
         m2TretINPUTOverdispersion = new double[this.samplingTime];
-        m1TretINPUTOverdispersion[0] = 0.1; // gd.sample();
-        m2TretINPUTOverdispersion[0] = 0.1; // gd.sample();
+        m1TretINPUTOverdispersion[0] = 0.1;
+        m2TretINPUTOverdispersion[0] = 0.1;
 
         m1CtrlIPOverdispersion = new double[this.samplingTime];
         m2CtrlIPOverdispersion = new double[this.samplingTime];
-        m1CtrlIPOverdispersion[0] = 0.1; // gd.sample();
-        m2CtrlIPOverdispersion[0] = 0.1; // gd.sample();
+        m1CtrlIPOverdispersion[0] = 0.1;
+        m2CtrlIPOverdispersion[0] = 0.1;
         m1CtrlINPUTOverdispersion = new double[this.samplingTime];
         m2CtrlINPUTOverdispersion = new double[this.samplingTime];
-        m1CtrlINPUTOverdispersion[0] = 0.1; // gd.sample();
-        m2CtrlINPUTOverdispersion[0] = 0.1; // gd.sample();
+        m1CtrlINPUTOverdispersion[0] = 0.1;
+        m2CtrlINPUTOverdispersion[0] = 0.1;
         sameMethylationLevelModel.setSamplingList(m1TretIPOverdispersion, m1TretINPUTOverdispersion, m1CtrlIPOverdispersion, m1CtrlINPUTOverdispersion, m1TretBkgExp, m1CtrlBkgExp, m1TretMethLevel, m1CtrlMethLevel);
         diffMethylationLevelModel.setSamplingList(m2TretIPOverdispersion, m2TretINPUTOverdispersion, m2CtrlIPOverdispersion, m2CtrlINPUTOverdispersion, m2TretBkgExp, m2CtrlBkgExp, m2TretMethLevel, m2CtrlMethLevel);
     }

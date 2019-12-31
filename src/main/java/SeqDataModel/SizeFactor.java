@@ -20,6 +20,7 @@ public class SizeFactor {
     }
 
     private double calcSizeFactor(double readsCount1, double readsCount2) {
+        readsCount2 = (readsCount2 <= 0.00001)? readsCount2 + 0.01: readsCount2;
         return readsCount1 / Math.sqrt(readsCount1 * readsCount2);
     }
 
@@ -67,7 +68,10 @@ public class SizeFactor {
         if (genesSizeFactor.length == 1) {
             return genesSizeFactor[0];
         }else if (genesSizeFactor.length % 2 == 0) {
-            sizeFactor = (genesSizeFactor[mediaIndex] + genesSizeFactor[mediaIndex+1]) / 2;
+            if (genesSizeFactor.length == 2)
+                sizeFactor = (genesSizeFactor[0] + genesSizeFactor[1]) / 2;
+            else
+                sizeFactor = (genesSizeFactor[mediaIndex] + genesSizeFactor[mediaIndex+1]) / 2;
         } else {
             sizeFactor = genesSizeFactor[mediaIndex];
         }

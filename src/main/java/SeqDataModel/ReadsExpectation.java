@@ -99,18 +99,18 @@ public class ReadsExpectation {
     public double[][] getIPReadsExepectation() {
         if (this.geneBkgExp == null)
             this.calcGenesBkgExp();
-//        this.globalSizeFactor(false);
-        // TODO:当作用于实际数据时改用上一行被注释的代码
-        this.individualIPSizeFactors = new double[] {1, 1, 1};
+        this.globalSizeFactor(false);
+//        // TODO:当作用于实际数据时改用上一行被注释的代码
+//        this.individualIPSizeFactors = new double[] {1, 1, 1};
         return this.geneReadsExpectation(false);
     }
 
     public double[][] getINPUTReadsExpectation() {
         if (this.geneBkgExp == null)
             this.calcGenesBkgExp();
-//        this.globalSizeFactor(true);
+        this.globalSizeFactor(true);
         // TODO:当作用于实际数据时改用上一行被注释的代码
-        this.individualINPUTSizeFactors = new double[] {1, 1, 1};
+//        this.individualINPUTSizeFactors = new double[] {1, 1, 1};
         return this.geneReadsExpectation(true);
     }
 }
