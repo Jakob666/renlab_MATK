@@ -62,7 +62,7 @@ public class SizeFactor {
         }
 
         Arrays.sort(genesSizeFactor);
-        int mediaIndex = genesSizeFactor.length / 2 + 1;
+        int mediaIndex = genesSizeFactor.length / 2;
 
         double sizeFactor;
         if (genesSizeFactor.length == 1) {
