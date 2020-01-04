@@ -2,7 +2,7 @@ package DifferentialMethylation;
 
 public class Parameters {
     private double tretIPOverdispersion, tretINPUTOverdispersion, ctrlIPOverdispersion, ctrlINPUTOverdispersion,
-                   tretMethylation, ctrlMethylation, tretBkgExp, ctrlBkgExp;
+                   tretMethylation, ctrlMethylation, tretBkgExp, tretNonPeakBkgExp, ctrlBkgExp, ctrlNonPeakBkgExp, tretNonspecificEnrichment, ctrlNonspecificEnrichment;
 
     public Parameters() {}
 
@@ -62,11 +62,43 @@ public class Parameters {
         this.tretBkgExp = value;
     }
 
+    public double getTretNonPeakBkgExp() {
+        return this.tretNonPeakBkgExp;
+    }
+
+    public void setTretNonPeakBkgExp(double value) {
+        this.tretNonPeakBkgExp = value;
+    }
+
     public double getCtrlBkgExp() {
         return this.ctrlBkgExp;
     }
 
     public void setCtrlBkgExp(double value) {
         this.ctrlBkgExp = value;
+    }
+
+    public double getCtrlNonPeakBkgExp() {
+        return this.ctrlNonPeakBkgExp;
+    }
+
+    public void setCtrlNonPeakBkgExp(double value) {
+        this.ctrlNonPeakBkgExp = value;
+    }
+
+    public void setTretNonspecificEnrichment(double value) {
+        this.tretNonspecificEnrichment = value;
+    }
+
+    public double getTretNonspecificEnrichment() {
+        return this.tretNonspecificEnrichment;
+    }
+
+    public void setCtrlNonspecificEnrichment(double value) {
+        this.ctrlNonspecificEnrichment = value;
+    }
+
+    public double getCtrlNonspecificEnrichment() {
+        return this.ctrlNonspecificEnrichment;
     }
 }
