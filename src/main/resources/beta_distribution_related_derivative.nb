@@ -1,0 +1,164 @@
+(* Content-type: application/vnd.wolfram.mathematica *)
+
+(*** Wolfram Notebook File ***)
+(* http://www.wolfram.com/nb *)
+
+(* CreatedBy='Mathematica 11.0' *)
+
+(*CacheID: 234*)
+(* Internal cache information:
+NotebookFileLineBreakTest
+NotebookFileLineBreakTest
+NotebookDataPosition[       158,          7]
+NotebookDataLength[      4285,        154]
+NotebookOptionsPosition[      3738,        129]
+NotebookOutlinePosition[      4095,        145]
+CellTagsIndexPosition[      4052,        142]
+WindowFrame->Normal*)
+
+(* Beginning of Notebook Content *)
+Notebook[{
+
+Cell[CellGroupData[{
+Cell[BoxData[{
+ RowBox[{
+  RowBox[{"logBetaDistrib", "[", 
+   RowBox[{"level_", ",", " ", "w_", ",", " ", "k_"}], "]"}], "=", 
+  RowBox[{
+   RowBox[{
+    RowBox[{"(", 
+     RowBox[{"w", "-", "1"}], ")"}], " ", "*", " ", 
+    RowBox[{"Log", "[", "level", "]"}]}], " ", "+", " ", 
+   RowBox[{
+    RowBox[{"(", 
+     RowBox[{"k", "-", "1"}], ")"}], " ", "*", " ", 
+    RowBox[{"Log", "[", 
+     RowBox[{"1", "-", "level"}], "]"}]}], " ", "-", " ", 
+   RowBox[{"LogGamma", "[", "w", "]"}], " ", "-", " ", 
+   RowBox[{"LogGamma", "[", "k", "]"}], " ", "+", " ", 
+   RowBox[{"LogGamma", "[", 
+    RowBox[{"w", "+", "k"}], "]"}]}]}], "\[IndentingNewLine]", 
+ RowBox[{
+  RowBox[{"(*", " ", 
+   RowBox[{
+    RowBox[{
+    "methylation", " ", "level", " ", "\:548c", " ", "nonspecific", " ", 
+     "enrichment", " ", "\:670d\:4ece\:7684Beta\:5206\:5e03"}], "\:ff0c", 
+    "\:5bf9\:6570\:516c\:5f0f"}], " ", "*)"}]}]}], "Input",
+ CellChangeTimes->{{3.787653092323679*^9, 3.7876532411844053`*^9}}],
+
+Cell[BoxData[
+ RowBox[{
+  RowBox[{
+   RowBox[{"(", 
+    RowBox[{
+     RowBox[{"-", "1"}], "+", "k"}], ")"}], " ", 
+   RowBox[{"Log", "[", 
+    RowBox[{"1", "-", "level"}], "]"}]}], "+", 
+  RowBox[{
+   RowBox[{"(", 
+    RowBox[{
+     RowBox[{"-", "1"}], "+", "w"}], ")"}], " ", 
+   RowBox[{"Log", "[", "level", "]"}]}], "-", 
+  RowBox[{"LogGamma", "[", "k", "]"}], "-", 
+  RowBox[{"LogGamma", "[", "w", "]"}], "+", 
+  RowBox[{"LogGamma", "[", 
+   RowBox[{"k", "+", "w"}], "]"}]}]], "Output",
+ CellChangeTimes->{3.787653243898526*^9}]
+}, Open  ]],
+
+Cell[CellGroupData[{
+
+Cell[BoxData[{
+ RowBox[{"deriveLevel", "=", 
+  RowBox[{"D", "[", 
+   RowBox[{
+    RowBox[{"logBetaDistrib", "[", 
+     RowBox[{"level", ",", " ", "w", ",", " ", "k"}], "]"}], ",", " ", 
+    "level"}], "]"}]}], "\[IndentingNewLine]", 
+ RowBox[{
+  RowBox[{"(*", " ", 
+   RowBox[{
+    RowBox[{"\[PartialD]", " ", "logBetaDistrib"}], " ", "/", " ", 
+    RowBox[{"\[PartialD]", " ", "level"}]}], "*)"}]}]}], "Input",
+ CellChangeTimes->{{3.787653252268812*^9, 3.7876533214903717`*^9}}],
+
+Cell[BoxData[
+ RowBox[{
+  RowBox[{"-", 
+   FractionBox[
+    RowBox[{
+     RowBox[{"-", "1"}], "+", "k"}], 
+    RowBox[{"1", "-", "level"}]]}], "+", 
+  FractionBox[
+   RowBox[{
+    RowBox[{"-", "1"}], "+", "w"}], "level"]}]], "Output",
+ CellChangeTimes->{3.78765332389959*^9}]
+}, Open  ]],
+
+Cell[CellGroupData[{
+
+Cell[BoxData[{
+ RowBox[{"D", "[", 
+  RowBox[{"deriveLevel", ",", " ", "level"}], "]"}], "\[IndentingNewLine]", 
+ RowBox[{
+  RowBox[{"(*", " ", 
+   RowBox[{
+    RowBox[{"\[PartialD]", 
+     RowBox[{"^", "2"}]}], " ", 
+    RowBox[{"logBetaDistrib", " ", "/", " ", 
+     RowBox[{"\[PartialD]", " ", 
+      RowBox[{"level", " ", "^", "2"}]}]}]}], " ", "*)"}]}]}], "Input",
+ CellChangeTimes->{{3.787653330090583*^9, 3.787653355893218*^9}}],
+
+Cell[BoxData[
+ RowBox[{
+  RowBox[{"-", 
+   FractionBox[
+    RowBox[{
+     RowBox[{"-", "1"}], "+", "k"}], 
+    SuperscriptBox[
+     RowBox[{"(", 
+      RowBox[{"1", "-", "level"}], ")"}], "2"]]}], "-", 
+  FractionBox[
+   RowBox[{
+    RowBox[{"-", "1"}], "+", "w"}], 
+   SuperscriptBox["level", "2"]]}]], "Output",
+ CellChangeTimes->{3.787653359356095*^9}]
+}, Open  ]]
+},
+WindowSize->{759, 813},
+WindowMargins->{{Automatic, 290}, {36, Automatic}},
+FrontEndVersion->"11.0 for Microsoft Windows (64-bit) (2016\:5e747\:670828\
+\:65e5)",
+StyleDefinitions->"Default.nb"
+]
+(* End of Notebook Content *)
+
+(* Internal cache information *)
+(*CellTagsOutline
+CellTagsIndex->{}
+*)
+(*CellTagsIndex
+CellTagsIndex->{}
+*)
+(*NotebookFileOutline
+Notebook[{
+Cell[CellGroupData[{
+Cell[580, 22, 984, 25, 87, "Input"],
+Cell[1567, 49, 532, 17, 30, "Output"]
+}, Open  ]],
+Cell[CellGroupData[{
+Cell[2136, 71, 479, 12, 68, "Input"],
+Cell[2618, 85, 275, 10, 54, "Output"]
+}, Open  ]],
+Cell[CellGroupData[{
+Cell[2930, 100, 434, 11, 68, "Input"],
+Cell[3367, 113, 355, 13, 59, "Output"]
+}, Open  ]]
+}
+]
+*)
+
+(* End of internal cache information *)
+

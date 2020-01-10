@@ -1,0 +1,142 @@
+(* Content-type: application/vnd.wolfram.mathematica *)
+
+(*** Wolfram Notebook File ***)
+(* http://www.wolfram.com/nb *)
+
+(* CreatedBy='Mathematica 11.0' *)
+
+(*CacheID: 234*)
+(* Internal cache information:
+NotebookFileLineBreakTest
+NotebookFileLineBreakTest
+NotebookDataPosition[       158,          7]
+NotebookDataLength[      3677,        132]
+NotebookOptionsPosition[      3133,        107]
+NotebookOutlinePosition[      3491,        123]
+CellTagsIndexPosition[      3448,        120]
+WindowFrame->Normal*)
+
+(* Beginning of Notebook Content *)
+Notebook[{
+
+Cell[CellGroupData[{
+Cell[BoxData[{
+ RowBox[{
+  RowBox[{"logGammaDistrib", "[", 
+   RowBox[{"theta_", ",", " ", "a_", ",", " ", "b_"}], "]"}], "=", 
+  RowBox[{
+   RowBox[{
+    RowBox[{"(", 
+     RowBox[{"a", "-", "1"}], ")"}], "*", 
+    RowBox[{"Log", "[", "theta", "]"}]}], " ", "-", " ", 
+   RowBox[{"theta", " ", "/", " ", "b"}], " ", "-", " ", 
+   RowBox[{"LogGamma", "[", "a", "]"}], " ", "-", " ", 
+   RowBox[{"a", " ", "*", " ", 
+    RowBox[{"Log", "[", "b", "]"}]}]}]}], "\[IndentingNewLine]", 
+ RowBox[{
+  RowBox[{"(*", 
+   RowBox[{
+   "overdispersion", " ", "\:670d\:4ece\:7684", " ", "log", " ", "Gamma", " ",
+     "distribution", " ", "\:516c\:5f0f"}], "*)"}]}]}], "Input",
+ CellChangeTimes->{{3.7876525403012075`*^9, 3.7876526823691487`*^9}}],
+
+Cell[BoxData[
+ RowBox[{
+  RowBox[{"-", 
+   FractionBox["theta", "b"]}], "-", 
+  RowBox[{"a", " ", 
+   RowBox[{"Log", "[", "b", "]"}]}], "+", 
+  RowBox[{
+   RowBox[{"(", 
+    RowBox[{
+     RowBox[{"-", "1"}], "+", "a"}], ")"}], " ", 
+   RowBox[{"Log", "[", "theta", "]"}]}], "-", 
+  RowBox[{"LogGamma", "[", "a", "]"}]}]], "Output",
+ CellChangeTimes->{3.7876526868357005`*^9}]
+}, Open  ]],
+
+Cell[CellGroupData[{
+
+Cell[BoxData[{
+ RowBox[{"deriveTheta", " ", "=", " ", 
+  RowBox[{"D", "[", 
+   RowBox[{
+    RowBox[{"logGammaDistrib", "[", 
+     RowBox[{"theta", ",", " ", "a", ",", " ", "b"}], "]"}], ",", " ", 
+    "theta"}], "]"}]}], "\[IndentingNewLine]", 
+ RowBox[{
+  RowBox[{"(*", " ", 
+   RowBox[{
+    RowBox[{"\[PartialD]", " ", "logGammaDistrib"}], " ", "/", " ", 
+    RowBox[{"\[PartialD]", " ", "theta"}]}], " ", "*)"}]}]}], "Input",
+ CellChangeTimes->{{3.7876527072610884`*^9, 3.787652804831457*^9}}],
+
+Cell[BoxData[
+ RowBox[{
+  RowBox[{"-", 
+   FractionBox["1", "b"]}], "+", 
+  FractionBox[
+   RowBox[{
+    RowBox[{"-", "1"}], "+", "a"}], "theta"]}]], "Output",
+ CellChangeTimes->{{3.7876527936141014`*^9, 3.7876528070227365`*^9}}]
+}, Open  ]],
+
+Cell[CellGroupData[{
+
+Cell[BoxData[{
+ RowBox[{"D", "[", 
+  RowBox[{"deriveTheta", ",", " ", "theta"}], "]"}], "\[IndentingNewLine]", 
+ RowBox[{
+  RowBox[{"(*", " ", 
+   RowBox[{
+    RowBox[{"\[PartialD]", 
+     RowBox[{"^", "2"}]}], " ", 
+    RowBox[{"logGammaDistrib", " ", "/", " ", 
+     RowBox[{"\[PartialD]", " ", 
+      RowBox[{"theta", " ", "^", "2"}]}]}]}], " ", "*)"}]}]}], "Input",
+ CellChangeTimes->{{3.7876528145037365`*^9, 3.787652857534785*^9}}],
+
+Cell[BoxData[
+ RowBox[{"-", 
+  FractionBox[
+   RowBox[{
+    RowBox[{"-", "1"}], "+", "a"}], 
+   SuperscriptBox["theta", "2"]]}]], "Output",
+ CellChangeTimes->{3.7876528612525797`*^9}]
+}, Open  ]]
+},
+WindowSize->{759, 533},
+WindowMargins->{{Automatic, 454}, {204, Automatic}},
+FrontEndVersion->"11.0 for Microsoft Windows (64-bit) (2016\:5e747\:670828\
+\:65e5)",
+StyleDefinitions->"Default.nb"
+]
+(* End of Notebook Content *)
+
+(* Internal cache information *)
+(*CellTagsOutline
+CellTagsIndex->{}
+*)
+(*CellTagsIndex
+CellTagsIndex->{}
+*)
+(*NotebookFileOutline
+Notebook[{
+Cell[CellGroupData[{
+Cell[580, 22, 734, 18, 68, "Input"],
+Cell[1317, 42, 375, 12, 54, "Output"]
+}, Open  ]],
+Cell[CellGroupData[{
+Cell[1729, 59, 496, 12, 68, "Input"],
+Cell[2228, 73, 229, 7, 53, "Output"]
+}, Open  ]],
+Cell[CellGroupData[{
+Cell[2494, 85, 437, 11, 68, "Input"],
+Cell[2934, 98, 183, 6, 55, "Output"]
+}, Open  ]]
+}
+]
+*)
+
+(* End of internal cache information *)
+
