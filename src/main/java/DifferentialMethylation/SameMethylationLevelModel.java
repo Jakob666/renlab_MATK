@@ -25,12 +25,12 @@ import Quantification.OverdispersionSampler;
 public class SameMethylationLevelModel extends ModelSelection {
 
     public SameMethylationLevelModel(MethylationLevelSampler tretMethylationLevelSampler, MethylationLevelSampler ctrlMethylationLevelSampler,
-                                     NonSpecificEnrichmentSampler tretNonspecificEnrichSampler, NonSpecificEnrichmentSampler ctrlNonspecificEnrichSampler,
+                                     NonSpecificEnrichmentSampler nonspecificEnrichSampler,
                                      OverdispersionSampler tretIPOverdispersionSampler, OverdispersionSampler tretINPUTOverdispersionSampler,
                                      OverdispersionSampler ctrlIPOverdispersionSampler, OverdispersionSampler ctrlINPUTOverdispersionSampler,
                                      BackgroundExpressionSampler treatmentBackgroundExpressionSampler, BackgroundExpressionSampler treatmentNonPeakExpressionSampler,
                                      BackgroundExpressionSampler controlBackgroundExpressionSampler, BackgroundExpressionSampler controlNonPeakExpressionSampler) {
-        super(tretMethylationLevelSampler, ctrlMethylationLevelSampler, tretNonspecificEnrichSampler, ctrlNonspecificEnrichSampler,
+        super(tretMethylationLevelSampler, ctrlMethylationLevelSampler, nonspecificEnrichSampler,
               tretIPOverdispersionSampler, tretINPUTOverdispersionSampler, ctrlIPOverdispersionSampler, ctrlINPUTOverdispersionSampler,
               treatmentBackgroundExpressionSampler, treatmentNonPeakExpressionSampler, controlBackgroundExpressionSampler, controlNonPeakExpressionSampler);
     }
@@ -43,14 +43,13 @@ public class SameMethylationLevelModel extends ModelSelection {
     @Override
     protected double treatmentMethylationSampling(int time, double logPrevParamsProba, boolean curModel, boolean usePseudoPrior) {
         double tretINPUTOverdispersion, tretIPOverdispersion, ctrlINPUTOverdispersion, ctrlIPOverdispersion,
-               tretMethLevel, ctrlMethLevel, tretNonspecificEnrich, ctrlNonspecificEnrich,
+               tretMethLevel, ctrlMethLevel, nonspecificEnrich,
                tretBkgExp, ctrlBkgExp, tretNonPeakExp, ctrlNonPeakExp, newTretMethLevel;
         boolean samplingRes;
         double[] newTretIPReadsExpectation, newCtrlIPReadsExpectation;
         double logCurParamsProba, logLikeProba, logPrior;
 
-        tretNonspecificEnrich = this.parameters.getTretNonspecificEnrichment();
-        ctrlNonspecificEnrich = this.parameters.getCtrlNonspecificEnrichment();
+        nonspecificEnrich = this.parameters.getNonspecificEnrichment();
         tretMethLevel = this.parameters.getTretMethylation();
         ctrlMethLevel = this.parameters.getCtrlMethylation();
         tretINPUTOverdispersion = this.parameters.getTretINPUTOverdispersion();
@@ -64,8 +63,8 @@ public class SameMethylationLevelModel extends ModelSelection {
         assert Math.abs(tretMethLevel-ctrlMethLevel)<0.00001;
         newTretMethLevel = this.tretMethylationLevelSampler.randomSample(tretMethLevel);
         // renew IP and INPUT reads expectations via new sampling methylation level, shape individualNumber × geneNumber
-        newTretIPReadsExpectation = this.renewReadsExpectationViaMethLevel(true, new double[]{newTretMethLevel}, new double[]{tretNonspecificEnrich});
-        newCtrlIPReadsExpectation = this.renewReadsExpectationViaMethLevel(false, new double[]{newTretMethLevel}, new double[]{ctrlNonspecificEnrich});
+        newTretIPReadsExpectation = this.renewReadsExpectationViaMethLevel(true, new double[]{newTretMethLevel}, new double[]{nonspecificEnrich});
+        newCtrlIPReadsExpectation = this.renewReadsExpectationViaMethLevel(false, new double[]{newTretMethLevel}, new double[]{nonspecificEnrich});
         if (curModel) {
             logLikeProba = this.logLikelihood(newTretIPReadsExpectation, this.treatmentINPUTExpectations,
                                               newCtrlIPReadsExpectation, this.controlINPUTExpectations,
@@ -75,7 +74,7 @@ public class SameMethylationLevelModel extends ModelSelection {
                                               ctrlIPOverdispersion, ctrlINPUTOverdispersion);
             logPrior = this.logPriority(tretIPOverdispersion, tretINPUTOverdispersion,
                                         ctrlIPOverdispersion, ctrlINPUTOverdispersion,
-                                        newTretMethLevel, newTretMethLevel, tretNonspecificEnrich, ctrlNonspecificEnrich,
+                                        newTretMethLevel, newTretMethLevel, nonspecificEnrich,
                                         tretBkgExp, ctrlBkgExp, tretNonPeakExp, ctrlNonPeakExp);
             logCurParamsProba = logLikeProba + logPrior;
         } else {
@@ -121,9 +120,8 @@ public class SameMethylationLevelModel extends ModelSelection {
     @Override
     public double paramsPseudoDistributionProbability(boolean usePseudoPrior) {
         double tretINPUTOverdispersion, tretIPOverdispersion, ctrlINPUTOverdispersion, ctrlIPOverdispersion,
-               tretMethLevel, tretNonspecificEnrich, ctrlNonspecificEnrich;// , tretBkgExp, ctrlBkgExp, tretNonPeakExp, ctrlNonPeakExp;
-        tretNonspecificEnrich = this.parameters.getTretNonspecificEnrichment();
-        ctrlNonspecificEnrich = this.parameters.getCtrlNonspecificEnrichment();
+               tretMethLevel, nonspecificEnrich;// , tretBkgExp, ctrlBkgExp, tretNonPeakExp, ctrlNonPeakExp;
+        nonspecificEnrich = this.parameters.getNonspecificEnrichment();
         tretMethLevel = this.parameters.getTretMethylation();
         tretINPUTOverdispersion = this.parameters.getTretINPUTOverdispersion();
         tretIPOverdispersion = this.parameters.getTretIPOverdispersion();
@@ -134,11 +132,10 @@ public class SameMethylationLevelModel extends ModelSelection {
         // tretNonPeakExp = this.parameters.getTretNonPeakBkgExp();
         // ctrlNonPeakExp = this.parameters.getCtrlNonPeakBkgExp();
         double proba, tretIPPseudo, tretINPUTPseudo, ctrlIPPseudo, ctrlINPUTPseudo, tretMethPseudo,
-               tretNonspecificPseudo, ctrlNonspecificPseudo, tretBkgExpPseudo, ctrlBkgExpPseudo, tretNonPeakExpPseudo, ctrlNonPeakExpPseudo;
+               nonspecificPseudo; //, ctrlNonspecificPseudo , tretBkgExpPseudo, ctrlBkgExpPseudo, tretNonPeakExpPseudo, ctrlNonPeakExpPseudo;
 
         if (!usePseudoPrior) {
-            tretNonspecificPseudo = this.tretNonspecificEnrichSampler.getLogDensity(tretNonspecificEnrich);
-            ctrlNonspecificPseudo = this.ctrlNonspecificEnrichSampler.getLogDensity(ctrlNonspecificEnrich);
+            nonspecificPseudo = this.nonspecificEnrichSampler.getLogDensity(nonspecificEnrich);
             tretIPPseudo = this.tretIPOverdispersionSampler.getLogDensity(tretIPOverdispersion);
             tretINPUTPseudo = this.tretINPUTOverdispersionSampler.getLogDensity(tretINPUTOverdispersion);
             ctrlIPPseudo = this.ctrlIPOverdispersionSampler.getLogDensity(ctrlIPOverdispersion);
@@ -149,8 +146,7 @@ public class SameMethylationLevelModel extends ModelSelection {
             // tretNonPeakExpPseudo = this.treatmentNonPeakExpressionSampler.getLogDensity(tretNonPeakExp);
             // ctrlNonPeakExpPseudo = this.treatmentNonPeakExpressionSampler.getLogDensity(ctrlNonPeakExp);
         } else {
-            tretNonspecificPseudo = this.tretNonspecificEnrichPseudoSampler.getLogDensity(tretNonspecificEnrich);
-            ctrlNonspecificPseudo = this.ctrlNonspecificEnrichPseudoSampler.getLogDensity(ctrlNonspecificEnrich);
+            nonspecificPseudo = this.nonspecificEnrichPseudoSampler.getLogDensity(nonspecificEnrich);
             tretIPPseudo = this.tretIPOverdispersionPseudoSampler.getLogDensity(tretIPOverdispersion);
             tretINPUTPseudo = this.tretINPUTOverdispersionPseudoSampler.getLogDensity(tretINPUTOverdispersion);
             ctrlIPPseudo = this.ctrlIPOverdispersionPseudoSampler.getLogDensity(ctrlIPOverdispersion);
@@ -163,7 +159,7 @@ public class SameMethylationLevelModel extends ModelSelection {
         }
 
         proba = tretIPPseudo + tretINPUTPseudo + ctrlIPPseudo + ctrlINPUTPseudo + tretMethPseudo +
-                tretNonspecificPseudo + ctrlNonspecificPseudo;//  + tretBkgExpPseudo + ctrlBkgExpPseudo + tretNonPeakExpPseudo + ctrlNonPeakExpPseudo;
+                nonspecificPseudo;//  + ctrlNonspecificPseudo + tretBkgExpPseudo + ctrlBkgExpPseudo + tretNonPeakExpPseudo + ctrlNonPeakExpPseudo;
 
         return proba;
     }
@@ -188,7 +184,7 @@ public class SameMethylationLevelModel extends ModelSelection {
     protected double logPriority(double treatmentIPOverdispersion, double treatmentINPUTOverdispersion,
                                  double controlIPOverdispersion, double controlINPUTOverdispersion,
                                  double treatmentMethylationLevel, double controlMethylationLevel,
-                                 double treatmentNonspecificEnrich, double controlNonspecificEnrich,
+                                 double nonspecificEnrich,
                                  double treatmentBackgroundExpression, double controlBackgroundExpression,
                                  double treatmentNonPeakExpression, double controlNonPeakExpression) {
         double proba = 0;
@@ -196,17 +192,16 @@ public class SameMethylationLevelModel extends ModelSelection {
         double tretINPUTOverdispersionProba = this.tretINPUTOverdispersionSampler.getLogDensity(treatmentINPUTOverdispersion);
         double ctrlIPOverdispersionProba = this.ctrlIPOverdispersionSampler.getLogDensity(controlIPOverdispersion);
         double ctrlINPUTOverdispersionProba= this.ctrlINPUTOverdispersionSampler.getLogDensity(controlINPUTOverdispersion);
+        double nonspecificEnrichProba = this.nonspecificEnrichSampler.getLogDensity(nonspecificEnrich);
         double tretMethProba = this.tretMethylationLevelSampler.getLogDensity(treatmentMethylationLevel);
-        double tretBkgExpProba = this.treatmentBackgroundExpressionSampler.getLogDensity(treatmentBackgroundExpression);
-        double ctrlBkgExpProba = this.controlBackgroundExpressionSampler.getLogDensity(controlBackgroundExpression);
-        double tretNonspecificEnrichProba = this.tretNonspecificEnrichSampler.getLogDensity(treatmentNonspecificEnrich);
-        double ctrlNonspecificEnrichProba = this.ctrlNonspecificEnrichSampler.getLogDensity(controlNonspecificEnrich);
-        double tretNonPeakExpProba = this.treatmentNonPeakExpressionSampler.getLogDensity(treatmentNonPeakExpression);
-        double ctrlNonPeakExpProba = this.controlNonPeakExpressionSampler.getLogDensity(controlNonPeakExpression);
+        // double tretBkgExpProba = this.treatmentBackgroundExpressionSampler.getLogDensity(treatmentBackgroundExpression);
+        // double ctrlBkgExpProba = this.controlBackgroundExpressionSampler.getLogDensity(controlBackgroundExpression);
+        // double tretNonPeakExpProba = this.treatmentNonPeakExpressionSampler.getLogDensity(treatmentNonPeakExpression);
+        // double ctrlNonPeakExpProba = this.controlNonPeakExpressionSampler.getLogDensity(controlNonPeakExpression);
 
         proba += tretINPUTOverdispersionProba + tretIPOverdispersionProba + ctrlIPOverdispersionProba + ctrlINPUTOverdispersionProba
-                + tretMethProba + tretNonspecificEnrichProba + ctrlNonspecificEnrichProba
-                + tretBkgExpProba + ctrlBkgExpProba + tretNonPeakExpProba + ctrlNonPeakExpProba;
+                + tretMethProba + nonspecificEnrichProba;
+                //  + ctrlNonspecificEnrichProba + tretBkgExpProba + ctrlBkgExpProba + tretNonPeakExpProba + ctrlNonPeakExpProba
         return proba;
     }
 
@@ -224,8 +219,7 @@ public class SameMethylationLevelModel extends ModelSelection {
             this.ctrlINPUTOverdispersionPseudoSampler = this.ctrlINPUTOverdispersionSampler;
             this.tretMethylationLevelPseudoSampler = this.tretMethylationLevelSampler;
             this.ctrlMethylationLevelPseudoSampler = this.ctrlMethylationLevelSampler;
-            this.tretNonspecificEnrichPseudoSampler = this.tretNonspecificEnrichSampler;
-            this.ctrlNonspecificEnrichPseudoSampler = this.ctrlNonspecificEnrichSampler;
+            this.nonspecificEnrichPseudoSampler = this.nonspecificEnrichSampler;
             this.treatmentBackgroundExpressionPseudoSampler = this.treatmentBackgroundExpressionSampler;
             this.controlBackgroundExpressionPseudoSampler = this.controlBackgroundExpressionSampler;
             this.treatmentNonPeakExpressionPseudoSampler = this.treatmentNonPeakExpressionSampler;
@@ -239,16 +233,11 @@ public class SameMethylationLevelModel extends ModelSelection {
                 this.tretMethylationLevelPseudoSampler = new MethylationLevelSampler(methylationParams[0], methylationParams[1]);
                 this.ctrlMethylationLevelPseudoSampler = new MethylationLevelSampler(methylationParams[0], methylationParams[1]);
             }
-            double[] tretNonspecificEnrichParams = PseudoBetaDistribution.estimate(this.tretNonspecificEnrichList);
-            if (tretNonspecificEnrichParams[0] < 0.00001 | tretNonspecificEnrichParams[1] < 0.00001)
-                this.tretNonspecificEnrichPseudoSampler = this.tretNonspecificEnrichSampler;
+            double[] nonspecificEnrichParams = PseudoBetaDistribution.estimate(this.nonspecificEnrichList);
+            if (nonspecificEnrichParams[0] < 0.00001 | nonspecificEnrichParams[1] < 0.00001)
+                this.nonspecificEnrichPseudoSampler = this.nonspecificEnrichSampler;
             else
-                this.tretNonspecificEnrichPseudoSampler = new NonSpecificEnrichmentSampler(tretNonspecificEnrichParams[0], tretNonspecificEnrichParams[1]);
-            double[] ctrlNonspecificEnrichParams = PseudoBetaDistribution.estimate(this.tretNonspecificEnrichList);
-            if (ctrlNonspecificEnrichParams[0] < 0.00001 | ctrlNonspecificEnrichParams[1] < 0.00001)
-                this.ctrlNonspecificEnrichPseudoSampler = this.ctrlNonspecificEnrichSampler;
-            else
-                this.ctrlNonspecificEnrichPseudoSampler = new NonSpecificEnrichmentSampler(ctrlNonspecificEnrichParams[0], ctrlNonspecificEnrichParams[1]);
+                this.nonspecificEnrichPseudoSampler = new NonSpecificEnrichmentSampler(nonspecificEnrichParams[0], nonspecificEnrichParams[1]);
 
             double[] tretIPOverdispersionParams = PseudoInverseGammaDistribution.estimate(this.tretIPOverdispersionList);
             if (tretIPOverdispersionParams == null)
