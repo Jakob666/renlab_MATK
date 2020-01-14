@@ -735,7 +735,7 @@ public abstract class ModelSelection {
      * @param methLevel methylation level 1×1
      * @return reads count expectations, shape 1×individualNumber
      */
-    protected double[][] renewReadsExpectationViaNonspecificEnrich(boolean treatment, double[] methLevel, double[] nonspecificEnrich) {
+    public double[][] renewReadsExpectationViaNonspecificEnrich(boolean treatment, double[] methLevel, double[] nonspecificEnrich) {
         double[][] newIPReadsExpectation, newIPNonPeakExpectation, newINPUTReadsExpectation, newINPUTNonPeakExpectation;
         // shape individualNumber × geneNumber
         int[][] ipReads, inputReads, ipNonpeak, inputNonpeak;
@@ -782,7 +782,7 @@ public abstract class ModelSelection {
      * @param methLevel methylation level 1×1
      * @return reads count expectations, shape 1×individualNumber
      */
-    protected double[] renewReadsExpectationViaMethLevel(boolean treatment, double[] methLevel, double[] nonspecificEnrich) {
+    public double[] renewReadsExpectationViaMethLevel(boolean treatment, double[] methLevel, double[] nonspecificEnrich) {
         double[][] newIPReadsExpectation;
         // shape individualNumber × geneNumber
         int[][] ipReads, inputReads, ipNonpeak, inputNonpeak;
@@ -922,12 +922,12 @@ public abstract class ModelSelection {
      * @param controlIPOverdispersion control group IP reads count overdispersion of a gene
      * @param controlINPUTOverdispersion control group INPUT reads count overdispersion of a gene
      */
-    protected double logLikelihood(double[] treatmentIPExpectations, double[] treatmentINPUTExpectations,
-                                   double[] controlIPExpectations, double[] controlINPUTExpectations,
-                                   double[] treatmentIPNonPeakExpect, double[] treatmentINPUTNonPeakExpect,
-                                   double[] controlIPNonPeakExpect, double[] controlINPUTNonPeakExpect,
-                                   double treatmentIPOverdispersion, double treatmentINPUTOverdispersion,
-                                   double controlIPOverdispersion, double controlINPUTOverdispersion) {
+    public double logLikelihood(double[] treatmentIPExpectations, double[] treatmentINPUTExpectations,
+                                double[] controlIPExpectations, double[] controlINPUTExpectations,
+                                double[] treatmentIPNonPeakExpect, double[] treatmentINPUTNonPeakExpect,
+                                double[] controlIPNonPeakExpect, double[] controlINPUTNonPeakExpect,
+                                double treatmentIPOverdispersion, double treatmentINPUTOverdispersion,
+                                double controlIPOverdispersion, double controlINPUTOverdispersion) {
         double proba = 0;
         proba += ProbabilityCalculator.logNegativeProbability(this.treatmentIPReads, treatmentIPExpectations, treatmentIPOverdispersion);
         proba += ProbabilityCalculator.logNegativeProbability(this.treatmentINPUTReads, treatmentINPUTExpectations, treatmentINPUTOverdispersion);
@@ -957,12 +957,12 @@ public abstract class ModelSelection {
      * @param controlBackgroundExpression background expression of a gene in control group
      * @return logarithm prior probability
      */
-    protected abstract double logPriority(double treatmentIPOverdispersion, double treatmentINPUTOverdispersion,
-                                 double controlIPOverdispersion, double controlINPUTOverdispersion,
-                                 double treatmentMethylationLevel, double controlMethylationLevel,
-                                 double nonspecificEnrich,
-                                 double treatmentBackgroundExpression, double controlBackgroundExpression,
-                                 double treatmentNonPeakExpression, double controlNonPeakExpression);
+    public abstract double logPriority(double treatmentIPOverdispersion, double treatmentINPUTOverdispersion,
+                                       double controlIPOverdispersion, double controlINPUTOverdispersion,
+                                       double treatmentMethylationLevel, double controlMethylationLevel,
+                                       double nonspecificEnrich,
+                                       double treatmentBackgroundExpression, double controlBackgroundExpression,
+                                       double treatmentNonPeakExpression, double controlNonPeakExpression);
 
     /**
      * model parameters prior probability in pseudo distribution

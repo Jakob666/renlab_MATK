@@ -5,6 +5,7 @@ import HessianMatrix.ModelDeterminate;
 import HessianMatrix.SameMethylationModelDeterminate;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 
 public class BayesFactorCalculation {
     private int model0ParamNumber, model1ParamNumber;
@@ -86,7 +87,7 @@ public class BayesFactorCalculation {
     }
 
     /**
-     * logBF = model1LogLikelihood - model0LogLikelihood + model1LogPrior - model0LogPrior + (param1-param0)*log(2PI) + logH0 - logH1
+     * logBF = model1LogLikelihood - model0LogLikelihood + model1LogPrior - model0LogPrior + (param1-param0)*log(2PI) + log|-H0| - log|-H1|
      * @return Bayes factor
      */
     public double calcBayesFactor() {
@@ -95,9 +96,11 @@ public class BayesFactorCalculation {
 
         double likelihood = Math.exp(this.model1Likelihood - this.model0Likelihood);
         double prior = Math.exp(this.model1Prior - this.model0Prior);
-        double penalty = Math.pow(2*Math.PI, (this.model1ParamNumber-this.model0ParamNumber) * 0.5);
-        double determinate = 0.5 * model0Determinate.divide(model1Determinate, 20, BigDecimal.ROUND_HALF_UP).doubleValue();
+        double penalty = Math.pow(2*Math.PI, (this.model1ParamNumber - this.model0ParamNumber) * 0.5);
+        BigDecimal determinate = model0Determinate.divide(model1Determinate, 60, RoundingMode.HALF_UP);
 
-        return likelihood * prior * penalty * determinate;
+        double bayesFactor = likelihood * prior * penalty * Math.pow(Math.abs(determinate.doubleValue()), 0.5);
+
+        return bayesFactor;
     }
 }

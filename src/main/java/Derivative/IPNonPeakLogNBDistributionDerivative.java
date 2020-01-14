@@ -58,12 +58,12 @@ public class IPNonPeakLogNBDistributionDerivative {
         // exp * sizeFactor * sigma
         double eso = this.backgroundExpression * sizeFactor * this.ipOverdispersion;
         // exp * r * sizeFactor
-        double erps = this.backgroundExpression * this.nonspecificEnrichment * sizeFactor;
+        double ers = this.backgroundExpression * this.nonspecificEnrichment * sizeFactor;
         // 1 + exp * r * sizeFactor * sigma
-        double erpso = 1 + erps * this.ipOverdispersion;
+        double erso = 1 + ers * this.ipOverdispersion;
 
-        return this.backgroundExpression * eso * sizeFactor / Math.pow(erpso, 2) -
+        return this.backgroundExpression * eso * sizeFactor / Math.pow(erso, 2) -
                readsCount / Math.pow(this.nonspecificEnrichment, 2) +
-               Math.pow(eso, 2) * readsCount / Math.pow(erpso, 2);
+               Math.pow(eso, 2) * readsCount / Math.pow(erso, 2);
     }
 }

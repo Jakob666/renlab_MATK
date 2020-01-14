@@ -28,27 +28,27 @@ public class SameMethylationModelDeterminate extends ModelDeterminate {
      */
     public BigDecimal modelDeterminate() {
         // d2 f / d tret_sigma_ip 2
-        double secDerivTretIPOverdispersion = this.hm.secondDerivativeTreatmentIPOverdispersion();
+        double secDerivTretIPOverdispersion = -1 * this.hm.secondDerivativeTreatmentIPOverdispersion();
         // d2 f / d tret_sigma_input 2
-        double secDerivTretINPUTOverdispersion = this.hm.secondDerivativeTreatmentINPUTOverdispersion();
+        double secDerivTretINPUTOverdispersion = -1 * this.hm.secondDerivativeTreatmentINPUTOverdispersion();
         // d2 f / d ctrl_sigma_ip 2
-        double secDerivCtrlIPOverdispersion = this.hm.secondDerivativeControlIPOverdispersion();
+        double secDerivCtrlIPOverdispersion = -1 * this.hm.secondDerivativeControlIPOverdispersion();
         // d2 f / d ctrl_sigma_input 2
-        double secDerivCtrlINPUTOverdispersion = this.hm.secondDerivativeControlINPUTOverdispersion();
+        double secDerivCtrlINPUTOverdispersion = -1 * this.hm.secondDerivativeControlINPUTOverdispersion();
         // d2 f / d r 2
-        double secDerivNonspecificEnrich = this.hm.secondDerivativeNonspecificEnrichment();
+        double secDerivNonspecificEnrich = -1 * this.hm.secondDerivativeNonspecificEnrichment();
         // d2 f / d p 2, here different with diff methylation level model
-        double secDerivMethylationLevel = this.hm.secondDerivativeControlMethylationLevel() +
+        double secDerivMethylationLevel = -1 * (this.hm.secondDerivativeControlMethylationLevel() +
                                           this.hm.secondDerivativeTreatmentMethylationLevel() -
-                                          LogBetaDistributionDerivative.logBetaSecondOrderDerivative(this.betaScale1, this.betaScale2, this.methylationLevel);
+                                          LogBetaDistributionDerivative.logBetaSecondOrderDerivative(this.betaScale1, this.betaScale2, this.methylationLevel));
 
-        double[] values = new double[] {secDerivTretIPOverdispersion, secDerivTretINPUTOverdispersion,
-                                        secDerivCtrlIPOverdispersion, secDerivCtrlINPUTOverdispersion,
+        double[] values = new double[] {secDerivTretIPOverdispersion, secDerivCtrlIPOverdispersion,
+                                        secDerivTretINPUTOverdispersion, secDerivCtrlINPUTOverdispersion,
                                         secDerivMethylationLevel, secDerivNonspecificEnrich};
 
-        BigDecimal res = new BigDecimal("1");
-        for (int i=0; i<values.length; i++) {
-            res = res.multiply(new BigDecimal(Double.toString(values[i])));
+        BigDecimal res = new BigDecimal("-1");
+        for (double val: values) {
+            res = res.multiply(new BigDecimal(val));
         }
 
         return res;

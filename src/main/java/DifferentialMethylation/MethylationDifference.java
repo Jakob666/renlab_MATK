@@ -1,11 +1,16 @@
 package DifferentialMethylation;
 
+import LaplaceMetropolisEstimator.BestModelParams;
+import LaplaceMetropolisEstimator.CovarianceMatrix;
 import Quantification.BackgroundExpressionSampler;
 import Quantification.MethylationLevelSampler;
 import Quantification.NonSpecificEnrichmentSampler;
 import Quantification.OverdispersionSampler;
 import SeqDataModel.BackgroundExpression;
 import SeqDataModel.ReadsExpectation;
+import org.apache.commons.math3.linear.Array2DRowRealMatrix;
+import org.apache.commons.math3.linear.LUDecomposition;
+import org.apache.commons.math3.linear.RealMatrix;
 
 import java.io.*;
 import java.text.DecimalFormat;
@@ -215,7 +220,7 @@ public class MethylationDifference {
         CountDownLatch countDown = new CountDownLatch(this.geneNumber);
         CreateTask ct = (geneIdx -> () -> {
             try {
-                System.out.println(geneIdx+1 + "/" + this.geneNumber);
+                // System.out.println(geneIdx+1 + "/" + this.geneNumber);
                 int[][] geneReadsCounts;
                 int[] tretIPReads, tretINPUTReads, ctrlIPReads, ctrlINPUTReads,
                       tretIPNonPeak, tretINPUTNonPeak, ctrlIPNonPeak, ctrlINPUTNonPeak, selectResult;
@@ -293,9 +298,8 @@ public class MethylationDifference {
 
                 // this.quantifyResult.put(geneIdx, finalModelQuantify);
                 // calculate Bayes factor
-                double bayesFactor = this.calcLogBayesFactor(tretIPReads, tretINPUTReads, ctrlIPReads, ctrlINPUTReads,
-                                                             tretIPNonPeak, tretINPUTNonPeak, ctrlIPNonPeak, ctrlINPUTNonPeak,
-                                                             model0Quantify, model1Quantify, sameMethylationLevelModel, diffMethylationLevelModel, geneIdx);
+                // double bayesFactor = this.calcLogBayesFactorLaplaceApproximation(model0Quantify, model1Quantify, sameMethylationLevelModel, diffMethylationLevelModel, geneIdx);
+                double bayesFactor = this.calcBayesFactorLaplaceMetropolis(sameMethylationLevelModel, diffMethylationLevelModel);
                 this.bayesFactors.put(geneIdx, bayesFactor);
                 System.out.println(geneIdx +": " + bayesFactor);
                 if (bayesFactor - 3 > 0.00001)
@@ -443,10 +447,16 @@ public class MethylationDifference {
      *
      *  2*log(BF) is used as a evidential measure to compare the support provided by the observe data D for Model0 relative to Model1.
      */
-    private double calcLogBayesFactor(int[] tretIPReads, int[] tretINPUTReads, int[] ctrlIPReads, int[] ctrlINPUTReads,
-                                      int[] tretIPNonPeak, int[] tretINPUTNonPeak, int[] ctrlIPNonPeak, int[] ctrlINPUTNonPeak,
-                                      double[] sameMethModelQuantify, double[] diffMethModelQuantify,
-                                      ModelSelection sameMethModel, ModelSelection diffMethModel, int geneIdx) {
+    private double calcLogBayesFactorLaplaceApproximation(double[] sameMethModelQuantify, double[] diffMethModelQuantify,
+                                                          ModelSelection sameMethModel, ModelSelection diffMethModel, int geneIdx) {
+        int[] tretIPReads = sameMethModel.treatmentIPReads;
+        int[] tretINPUTReads = sameMethModel.treatmentINPUTReads;
+        int[] ctrlIPReads = sameMethModel.controlIPReads;
+        int[] ctrlINPUTReads = sameMethModel.controlINPUTReads;
+        int[] tretIPNonPeak = sameMethModel.treatmentIPNonPeakReads;
+        int[] tretINPUTNonPeak = sameMethModel.treatmentINPUTNonPeakReads;
+        int[] ctrlIPNonPeak = sameMethModel.controlIPNonPeakReads;
+        int[] ctrlINPUTNonPeak = sameMethModel.controlINPUTNonPeakReads;
         double tretPeakBkgExp = this.tretGeneBackgroundExpression[geneIdx];
         double tretNonPeakBkgExp= this.tretNonPeakExpressionMean[geneIdx];
         double ctrlPeakBkgExp = this.ctrlGeneBackgroundExpression[geneIdx];
@@ -464,6 +474,62 @@ public class MethylationDifference {
                      tretIPNonPeak, tretINPUTNonPeak, ctrlIPNonPeak, ctrlINPUTNonPeak);
         bfc.setSizeFactors(tretSizeFactor, ctrlSizeFactor);
         return bfc.calcBayesFactor();
+    }
+
+    /**
+     * calculate Bayes factor with Laplace-Metropolis estimator
+     * @return Bayes factor
+     */
+    private double calcBayesFactorLaplaceMetropolis(ModelSelection sameMethModel, ModelSelection diffMethModel) {
+        double[] treatmentIPOverdispersion, treatmentINPUTOverdispersion, controlIPOverdispersion, controlINPUTOverdispersion,
+                 treatmentMethylationLevel, controlMethylationLevel, nonspecificEnrichment;
+
+        treatmentIPOverdispersion = sameMethModel.treatmentIPOverdispersion;
+        treatmentINPUTOverdispersion = sameMethModel.treatmentINPUTOverdispersion;
+        controlIPOverdispersion = sameMethModel.controlIPOverdispersion;
+        controlINPUTOverdispersion = sameMethModel.controlINPUTOverdispersion;
+        treatmentMethylationLevel = sameMethModel.treatmentMethylationLevel;
+        nonspecificEnrichment = sameMethModel.nonspecificEnrichment;
+        CovarianceMatrix model0Covariance = new CovarianceMatrix(treatmentIPOverdispersion, treatmentINPUTOverdispersion,
+                                                                 controlIPOverdispersion, controlINPUTOverdispersion,
+                                                                 treatmentMethylationLevel, null,
+                                                                 nonspecificEnrichment, this.burnIn);
+        double[][] model0CovarianceMatrix = model0Covariance.getCovarianceMatrix();
+        RealMatrix model0CovMatrix = new Array2DRowRealMatrix(model0CovarianceMatrix);
+        double model0Determinate = new LUDecomposition(model0CovMatrix).getDeterminant();
+        BestModelParams model0BestParams = new BestModelParams(treatmentIPOverdispersion, treatmentINPUTOverdispersion,
+                                                               controlIPOverdispersion, controlINPUTOverdispersion,
+                                                               treatmentMethylationLevel, null,
+                                                               nonspecificEnrichment, sameMethModel, this.burnIn);
+        double model0MaximumPosterior = model0BestParams.getMaximumPosterior();
+
+        treatmentIPOverdispersion = diffMethModel.treatmentIPOverdispersion;
+        treatmentINPUTOverdispersion = diffMethModel.treatmentINPUTOverdispersion;
+        controlIPOverdispersion = diffMethModel.controlIPOverdispersion;
+        controlINPUTOverdispersion = diffMethModel.controlINPUTOverdispersion;
+        treatmentMethylationLevel = diffMethModel.treatmentMethylationLevel;
+        controlMethylationLevel = diffMethModel.controlMethylationLevel;
+        nonspecificEnrichment = diffMethModel.nonspecificEnrichment;
+        CovarianceMatrix model1Covariance = new CovarianceMatrix(treatmentIPOverdispersion, treatmentINPUTOverdispersion,
+                                                                 controlIPOverdispersion, controlINPUTOverdispersion,
+                                                                 treatmentMethylationLevel, controlMethylationLevel,
+                                                                 nonspecificEnrichment, this.burnIn);
+        double[][] model1CovarianceMatrix = model1Covariance.getCovarianceMatrix();
+        RealMatrix model1CovMatrix = new Array2DRowRealMatrix(model1CovarianceMatrix);
+        double model1Determinate = new LUDecomposition(model1CovMatrix).getDeterminant();
+        BestModelParams model1BestParams = new BestModelParams(treatmentIPOverdispersion, treatmentINPUTOverdispersion,
+                                                               controlIPOverdispersion, controlINPUTOverdispersion,
+                                                               treatmentMethylationLevel, controlMethylationLevel,
+                                                               nonspecificEnrichment, sameMethModel, this.burnIn);
+        double model1MaximumPosterior = model1BestParams.getMaximumPosterior();
+
+        int model0ParamNum = 6, model1ParamNum = 7;
+
+        // p(D|M=0) and p(D|M=1)
+        double model0Proba = Math.pow(2*Math.PI, model0ParamNum*0.5) * Math.pow(model0Determinate, 0.5) * model0MaximumPosterior;
+        double model1Proba = Math.pow(2*Math.PI, model1ParamNum*0.5) * Math.pow(model1Determinate, 0.5) * model1MaximumPosterior;
+
+        return model1Proba / model0Proba;
     }
 
     private double[] sampleSizeFactors() {

@@ -1,6 +1,7 @@
 package HessianMatrix;
 
 import java.math.BigDecimal;
+import java.util.Arrays;
 
 public class DiffMethylationModelDeterminate extends ModelDeterminate{
 
@@ -15,27 +16,27 @@ public class DiffMethylationModelDeterminate extends ModelDeterminate{
 
     public BigDecimal modelDeterminate() {
         // d2 f / d tret_sigma_ip 2
-        double secDerivTretIPOverdispersion = this.hm.secondDerivativeTreatmentIPOverdispersion();
+        double secDerivTretIPOverdispersion = -1 * this.hm.secondDerivativeTreatmentIPOverdispersion();
         // d2 f / d tret_sigma_input 2
-        double secDerivTretINPUTOverdispersion = this.hm.secondDerivativeTreatmentINPUTOverdispersion();
+        double secDerivTretINPUTOverdispersion = -1 * this.hm.secondDerivativeTreatmentINPUTOverdispersion();
         // d2 f / d ctrl_sigma_ip 2
-        double secDerivCtrlIPOverdispersion = this.hm.secondDerivativeControlIPOverdispersion();
+        double secDerivCtrlIPOverdispersion = -1 * this.hm.secondDerivativeControlIPOverdispersion();
         // d2 f / d ctrl_sigma_input 2
-        double secDerivCtrlINPUTOverdispersion = this.hm.secondDerivativeControlINPUTOverdispersion();
+        double secDerivCtrlINPUTOverdispersion = -1 * this.hm.secondDerivativeControlINPUTOverdispersion();
         // d2 f / d r 2
-        double secDerivNonspecificEnrich = this.hm.secondDerivativeNonspecificEnrichment();
+        double secDerivNonspecificEnrich = -1 * this.hm.secondDerivativeNonspecificEnrichment();
         // d2 f / d pT 2
-        double secDerivPTret = this.hm.secondDerivativeTreatmentMethylationLevel();
+        double secDerivPTret = -1 * this.hm.secondDerivativeTreatmentMethylationLevel();
         // d2 f / d pC 2
-        double secDerivPCtrl = this.hm.secondDerivativeControlMethylationLevel();
+        double secDerivPCtrl = -1 * this.hm.secondDerivativeControlMethylationLevel();
 
-        double[] values = new double[] {secDerivTretIPOverdispersion, secDerivTretINPUTOverdispersion,
-                                        secDerivCtrlIPOverdispersion, secDerivCtrlINPUTOverdispersion,
+        double[] values = new double[] {secDerivTretIPOverdispersion, secDerivCtrlIPOverdispersion,
+                                        secDerivTretINPUTOverdispersion, secDerivCtrlINPUTOverdispersion,
                                         secDerivPTret, secDerivPCtrl, secDerivNonspecificEnrich};
 
         BigDecimal res = new BigDecimal("1");
-        for (int i=0; i<values.length; i++) {
-            res = res.multiply(new BigDecimal(Double.toString(values[i])));
+        for (double val: values) {
+            res = res.multiply(new BigDecimal(Double.toString(val)));
         }
 
         return res;

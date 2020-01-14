@@ -181,12 +181,12 @@ public class SameMethylationLevelModel extends ModelSelection {
      * @return logarithm prior probability
      */
     @Override
-    protected double logPriority(double treatmentIPOverdispersion, double treatmentINPUTOverdispersion,
-                                 double controlIPOverdispersion, double controlINPUTOverdispersion,
-                                 double treatmentMethylationLevel, double controlMethylationLevel,
-                                 double nonspecificEnrich,
-                                 double treatmentBackgroundExpression, double controlBackgroundExpression,
-                                 double treatmentNonPeakExpression, double controlNonPeakExpression) {
+    public double logPriority(double treatmentIPOverdispersion, double treatmentINPUTOverdispersion,
+                              double controlIPOverdispersion, double controlINPUTOverdispersion,
+                              double treatmentMethylationLevel, double controlMethylationLevel,
+                              double nonspecificEnrich,
+                              double treatmentBackgroundExpression, double controlBackgroundExpression,
+                              double treatmentNonPeakExpression, double controlNonPeakExpression) {
         double proba = 0;
         double tretIPOverdispersionProba = this.tretIPOverdispersionSampler.getLogDensity(treatmentIPOverdispersion);
         double tretINPUTOverdispersionProba = this.tretINPUTOverdispersionSampler.getLogDensity(treatmentINPUTOverdispersion);
