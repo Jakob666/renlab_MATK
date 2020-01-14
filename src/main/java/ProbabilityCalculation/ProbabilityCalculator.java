@@ -1,6 +1,5 @@
 package ProbabilityCalculation;
 
-import DifferentialMethylation.ModelSelection;
 import SeqDataModel.NegativeBinomialDistribution;
 
 public class ProbabilityCalculator {

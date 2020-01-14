@@ -56,7 +56,7 @@ public class DiffMethylationLevelModel extends ModelSelection {
         ctrlNonPeakExp = this.parameters.getCtrlNonPeakBkgExp();
         newTretMethLevel = this.tretMethylationLevelSampler.randomSample(tretMethLevel);
         // renew IP and INPUT reads expectations via new sampling methylation level, shape individualNumber × geneNumber
-        newIPReadsExpectation = this.renewReadsExpectationViaMethLevel(true, new double[]{newTretMethLevel}, new double[]{nonspecificEnrich});
+        newIPReadsExpectation = this.renewReadsExpectationViaMethLevel(true, new double[]{newTretMethLevel}, new double[]{nonspecificEnrich}, this.tretIPSizeFactors);
         if (curModel) {
             logLikeProba = this.logLikelihood(newIPReadsExpectation, this.treatmentINPUTExpectations,
                                               this.controlIPExpectations, this.controlINPUTExpectations,
@@ -118,7 +118,7 @@ public class DiffMethylationLevelModel extends ModelSelection {
         ctrlNonPeakExp = this.parameters.getCtrlNonPeakBkgExp();
         newCtrlMethLevel = this.ctrlMethylationLevelSampler.randomSample(ctrlMethLevel);
         // renew IP and INPUT reads expectations via new sampling methylation level, shape individualNumber × geneNumber
-        newIPReadsExpectation = this.renewReadsExpectationViaMethLevel(false, new double[]{newCtrlMethLevel}, new double[]{nonspecificEnrich});
+        newIPReadsExpectation = this.renewReadsExpectationViaMethLevel(false, new double[]{newCtrlMethLevel}, new double[]{nonspecificEnrich}, this.ctrlIPSizeFactors);
         if (curModel) {
             logLikeProba = this.logLikelihood(this.treatmentIPExpectations, this.treatmentINPUTExpectations,
                                               newIPReadsExpectation, this.controlINPUTExpectations,

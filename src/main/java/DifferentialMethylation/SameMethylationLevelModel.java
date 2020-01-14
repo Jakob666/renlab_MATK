@@ -63,8 +63,8 @@ public class SameMethylationLevelModel extends ModelSelection {
         assert Math.abs(tretMethLevel-ctrlMethLevel)<0.00001;
         newTretMethLevel = this.tretMethylationLevelSampler.randomSample(tretMethLevel);
         // renew IP and INPUT reads expectations via new sampling methylation level, shape individualNumber × geneNumber
-        newTretIPReadsExpectation = this.renewReadsExpectationViaMethLevel(true, new double[]{newTretMethLevel}, new double[]{nonspecificEnrich});
-        newCtrlIPReadsExpectation = this.renewReadsExpectationViaMethLevel(false, new double[]{newTretMethLevel}, new double[]{nonspecificEnrich});
+        newTretIPReadsExpectation = this.renewReadsExpectationViaMethLevel(true, new double[]{newTretMethLevel}, new double[]{nonspecificEnrich}, this.tretIPSizeFactors);
+        newCtrlIPReadsExpectation = this.renewReadsExpectationViaMethLevel(false, new double[]{newTretMethLevel}, new double[]{nonspecificEnrich}, this.ctrlIPSizeFactors);
         if (curModel) {
             logLikeProba = this.logLikelihood(newTretIPReadsExpectation, this.treatmentINPUTExpectations,
                                               newCtrlIPReadsExpectation, this.controlINPUTExpectations,
