@@ -206,15 +206,15 @@ public class MethylationDifference {
             initNonspecific[i] = 0.1;
         }
         ReadsExpectation re = new ReadsExpectation(this.treatmentIPReads, this.treatmentINPUTReads, this.treatmentIPNonPeak, this.treatmentINPUTNonPeak, initMethLevel, initNonspecific);
-        this.tretIPReadsExpectation = re.getIPReadsExepectation();
+        this.tretIPReadsExpectation = re.getIPReadsExpectation();
         this.tretINPUTReadsExpectation = re.getINPUTReadsExpectation();
-        this.tretIPNonPeakExpectation = re.getIPNonPeakExepectation();
+        this.tretIPNonPeakExpectation = re.getIPNonPeakExpectation();
         this.tretINPUTNonPeakExpectation = re.getINPUTNonPeakExpectation();
 
         re = new ReadsExpectation(this.controlIPReads, this.controlINPUTReads, this.controlIPNonPeak, this.controlINPUTNonPeak, initMethLevel, initNonspecific);
-        this.ctrlIPReadsExpectation = re.getIPReadsExepectation();
+        this.ctrlIPReadsExpectation = re.getIPReadsExpectation();
         this.ctrlINPUTReadsExpectation = re.getINPUTReadsExpectation();
-        this.ctrlIPNonPeakExpectation = re.getIPNonPeakExepectation();
+        this.ctrlIPNonPeakExpectation = re.getIPNonPeakExpectation();
         this.ctrlINPUTNonPeakExpectation = re.getINPUTNonPeakExpectation();
         initMethLevel = null;
         initNonspecific = null;
@@ -552,6 +552,12 @@ public class MethylationDifference {
         return model1Proba / model0Proba;
     }
 
+    /**
+     * size factors of each individual
+     * @param ipReads IP reads, shape individualNumber × geneNumber
+     * @param inputReads INPUT reads, shape individualNumber × geneNumber
+     * @return samples size factors
+     */
     private double[] sampleSizeFactors(int[][] ipReads, int[][] inputReads) {
         BackgroundExpression be = new BackgroundExpression(ipReads, inputReads);
         return be.getGlobalIPSizeFactor();

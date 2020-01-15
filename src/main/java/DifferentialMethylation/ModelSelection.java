@@ -23,8 +23,6 @@ public abstract class ModelSelection {
                     treatmentIPNonPeakReads, treatmentINPUTNonPeakReads, controlIPNonPeakReads, controlINPUTNonPeakReads;
     protected double[] treatmentIPExpectations, treatmentINPUTExpectations, controlIPExpectations, controlINPUTExpectations,
                        treatmentIPNonPeakExpect, treatmentINPUTNonPeakExpect, controlIPNonPeakExpect, controlINPUTNonPeakExpect;
-    protected double[] tretIPSizeFactors, tretINPUTSizeFactors, tretIPNonPeakSizeFactors, tretINPUTNonPeakSizeFactors,
-                       ctrlIPSizeFactors, ctrlINPUTSizeFactors, ctrlIPNonPeakSizeFactors, ctrlINPUTNonPeakSizeFactors;
     protected MHSampling mhSampling = new MHSampling();
     protected ArrayList<Double> tretIPOverdispersionList, tretINPUTOverdispersionList, ctrlIPOverdispersionList, ctrlINPUTOverdispersionList,
                                 tretMethyLationList, ctrlMethylationList, nonspecificEnrichList,
@@ -161,14 +159,14 @@ public abstract class ModelSelection {
      */
     public void setSizeFactors(double[] tretIPSizeFactors, double[] tretINPUTSizeFactors, double[] tretIPNonPeakSizeFactors, double[] tretINPUTNonPeakSizeFactors,
                                double[] ctrlIPSizeFactors, double[] ctrlINPUTSizeFactors, double[] ctrlIPNonPeakSizeFactors, double[] ctrlINPUTNonPeakSizeFactors) {
-        this.tretIPSizeFactors = tretIPSizeFactors;
-        this.tretINPUTSizeFactors = tretINPUTSizeFactors;
-        this.tretIPNonPeakSizeFactors = tretIPNonPeakSizeFactors;
-        this.tretINPUTNonPeakSizeFactors = tretINPUTNonPeakSizeFactors;
-        this.ctrlIPSizeFactors = ctrlIPSizeFactors;
-        this.ctrlINPUTSizeFactors = ctrlINPUTSizeFactors;
-        this.ctrlIPNonPeakSizeFactors = ctrlIPNonPeakSizeFactors;
-        this.ctrlINPUTNonPeakSizeFactors = ctrlINPUTNonPeakSizeFactors;
+        this.parameters.setTretIPSizeFactors(tretIPSizeFactors);
+        this.parameters.setTretINPUTSizeFactors(tretINPUTSizeFactors);
+        this.parameters.setTretIPNonPeakSizeFactors(tretIPNonPeakSizeFactors);
+        this.parameters.setTretINPUTNonPeakSizeFactors(tretINPUTNonPeakSizeFactors);
+        this.parameters.setCtrlIPSizeFactors(ctrlIPSizeFactors);
+        this.parameters.setCtrlINPUTSizeFactors(ctrlINPUTSizeFactors);
+        this.parameters.setCtrlIPNonPeakSizeFactors(ctrlIPNonPeakSizeFactors);
+        this.parameters.setCtrlINPUTNonPeakSizeFactors(ctrlINPUTNonPeakSizeFactors);
     }
 
     /**
@@ -685,6 +683,8 @@ public abstract class ModelSelection {
                tretBkgExp, ctrlBkgExp, tretNonPeakExp, ctrlNonPeakExp, newNonspecificEnrich;
         double[][] newExpectations;
         double[] newTretIPReadsExpectation, newTretIPNonPeakExpectation, newCtrlIPReadsExpectation, newCtrlIPNonPeakExpectation;
+        double[] tretIPSizeFactors, tretINPUTSizeFactors, tretIPNonPeakSizeFactors, tretINPUTNonPeakSizeFactors,
+                 ctrlIPSizeFactors, ctrlINPUTSizeFactors, ctrlIPNonPeakSizeFactors, ctrlINPUTNonPeakSizeFactors;
         boolean samplingRes;
         double logCurParamsProba, logLikeProba, logPrior;
 
@@ -700,14 +700,22 @@ public abstract class ModelSelection {
         tretNonPeakExp = this.parameters.getTretNonPeakBkgExp();
         ctrlNonPeakExp = this.parameters.getCtrlNonPeakBkgExp();
         newNonspecificEnrich = this.nonspecificEnrichSampler.randomSample(nonspecificEnrich);
+        tretIPSizeFactors = this.parameters.getTretIPSizeFactors();
+        tretINPUTSizeFactors = this.parameters.getTretINPUTSizeFactors();
+        tretIPNonPeakSizeFactors = this.parameters.getTretIPNonPeakSizeFactors();
+        tretINPUTNonPeakSizeFactors = this.parameters.getTretINPUTNonPeakSizeFactors();
+        ctrlIPSizeFactors = this.parameters.getCtrlIPSizeFactors();
+        ctrlINPUTSizeFactors = this.parameters.getCtrlINPUTSizeFactors();
+        ctrlIPNonPeakSizeFactors = this.parameters.getCtrlIPNonPeakSizeFactors();
+        ctrlINPUTNonPeakSizeFactors = this.parameters.getCtrlINPUTNonPeakSizeFactors();
         // renew IP and INPUT reads expectations via new sampling nonspecific enrichment ratio, shape individualNumber × geneNumber
         newExpectations = this.renewReadsExpectationViaNonspecificEnrich(true, new double[]{tretMethLevel}, new double[]{newNonspecificEnrich},
-                                                                          this.tretIPSizeFactors, this.tretINPUTSizeFactors, this.tretIPNonPeakSizeFactors, this.tretINPUTNonPeakSizeFactors);
+                                                                         tretIPSizeFactors, tretINPUTSizeFactors, tretIPNonPeakSizeFactors, tretINPUTNonPeakSizeFactors);
         newTretIPReadsExpectation = newExpectations[0];
         newTretIPNonPeakExpectation = newExpectations[1];
 
         newExpectations = this.renewReadsExpectationViaNonspecificEnrich(false, new double[]{ctrlMethLevel}, new double[]{newNonspecificEnrich},
-                                                                          this.ctrlIPSizeFactors, this.ctrlINPUTSizeFactors, this.ctrlIPNonPeakSizeFactors, this.ctrlINPUTNonPeakSizeFactors);
+                                                                         ctrlIPSizeFactors, ctrlINPUTSizeFactors, ctrlIPNonPeakSizeFactors, ctrlINPUTNonPeakSizeFactors);
         newCtrlIPReadsExpectation = newExpectations[0];
         newCtrlIPNonPeakExpectation = newExpectations[1];
 
@@ -775,7 +783,7 @@ public abstract class ModelSelection {
         ReadsExpectation re = new ReadsExpectation(ipReads, inputReads, ipNonpeak, inputNonpeak, methLevel, nonspecificEnrich);
         // shape individualNumber × 1
         newIPReadsExpectation = re.getIPReadsExpectation(ipSizeFactors);
-        newIPNonPeakExpectation = re.getIPNonPeakExepectation(nonPeakIPSizeFactors);
+        newIPNonPeakExpectation = re.getIPNonPeakExpectation(nonPeakIPSizeFactors);
         newINPUTReadsExpectation = re.getINPUTReadsExpectation(inputSizeFactors);
         newINPUTNonPeakExpectation = re.getINPUTNonPeakExpectation(nonPeakINPUTSizeFactors);
 
@@ -861,10 +869,10 @@ public abstract class ModelSelection {
         ReadsExpectation re = new ReadsExpectation(ipReads, inputReads, ipNonpeak, inputNonpeak, methLevel, nonspecificEnrich, bkgExp, inPeak);
         // shape individualNumber × 1
         if (inPeak) {
-            newIPReadsExpectation = re.getIPReadsExepectation();
+            newIPReadsExpectation = re.getIPReadsExpectation();
             newINPUTReadsExpectation = re.getINPUTReadsExpectation();
         } else {
-            newIPReadsExpectation = re.getIPNonPeakExepectation();
+            newIPReadsExpectation = re.getIPNonPeakExpectation();
             newINPUTReadsExpectation = re.getINPUTNonPeakExpectation();
         }
 

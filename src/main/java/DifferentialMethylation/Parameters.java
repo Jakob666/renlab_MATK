@@ -4,6 +4,9 @@ public class Parameters {
     private double tretIPOverdispersion, tretINPUTOverdispersion, ctrlIPOverdispersion, ctrlINPUTOverdispersion,
                    tretMethylation, ctrlMethylation, tretBkgExp, tretNonPeakBkgExp, ctrlBkgExp, ctrlNonPeakBkgExp, nonspecificEnrichment;
 
+    private double[] tretIPSizeFactors, tretINPUTSizeFactors, tretIPNonPeakSizeFactors, tretINPUTNonPeakSizeFactors,
+                     ctrlIPSizeFactors, ctrlINPUTSizeFactors, ctrlIPNonPeakSizeFactors, ctrlINPUTNonPeakSizeFactors;
+
     public Parameters() {}
 
     public double getTretIPOverdispersion() {
@@ -92,5 +95,69 @@ public class Parameters {
 
     public double getNonspecificEnrichment() {
         return this.nonspecificEnrichment;
+    }
+
+    public void setTretINPUTSizeFactors(double[] tretINPUTSizeFactors) {
+        this.tretINPUTSizeFactors = tretINPUTSizeFactors;
+    }
+
+    public double[] getTretINPUTSizeFactors() {
+        return this.tretINPUTSizeFactors;
+    }
+
+    public void setTretINPUTNonPeakSizeFactors(double[] tretINPUTNonPeakSizeFactors) {
+        this.tretINPUTNonPeakSizeFactors = tretINPUTNonPeakSizeFactors;
+    }
+
+    public double[] getTretINPUTNonPeakSizeFactors() {
+        return this.tretINPUTNonPeakSizeFactors;
+    }
+
+    public void setTretIPSizeFactors(double[] tretIPSizeFactors) {
+        this.tretIPSizeFactors = tretIPSizeFactors;
+    }
+
+    public double[] getTretIPSizeFactors() {
+        return this.tretIPSizeFactors;
+    }
+
+    public void setTretIPNonPeakSizeFactors(double[] tretIPNonPeakSizeFactors) {
+        this.tretIPNonPeakSizeFactors = tretIPNonPeakSizeFactors;
+    }
+
+    public double[] getTretIPNonPeakSizeFactors() {
+        return this.tretIPNonPeakSizeFactors;
+    }
+
+    public void setCtrlINPUTSizeFactors(double[] ctrlINPUTSizeFactors) {
+        this.ctrlINPUTSizeFactors = ctrlINPUTSizeFactors;
+    }
+
+    public double[] getCtrlINPUTSizeFactors() {
+        return this.ctrlINPUTSizeFactors;
+    }
+
+    public void setCtrlINPUTNonPeakSizeFactors(double[] ctrlINPUTNonPeakSizeFactors) {
+        this.ctrlINPUTNonPeakSizeFactors = ctrlINPUTNonPeakSizeFactors;
+    }
+
+    public double[] getCtrlINPUTNonPeakSizeFactors() {
+        return this.ctrlINPUTNonPeakSizeFactors;
+    }
+
+    public void setCtrlIPSizeFactors(double[] ctrlIPSizeFactors) {
+        this.ctrlIPSizeFactors = ctrlIPSizeFactors;
+    }
+
+    public double[] getCtrlIPSizeFactors() {
+        return this.ctrlIPSizeFactors;
+    }
+
+    public void setCtrlIPNonPeakSizeFactors(double[] ctrlIPNonPeakSizeFactors) {
+        this.ctrlIPNonPeakSizeFactors = ctrlIPNonPeakSizeFactors;
+    }
+
+    public double[] getCtrlIPNonPeakSizeFactors() {
+        return this.ctrlIPNonPeakSizeFactors;
     }
 }

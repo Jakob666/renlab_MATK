@@ -46,7 +46,7 @@ public class SameMethylationLevelModel extends ModelSelection {
                tretMethLevel, ctrlMethLevel, nonspecificEnrich,
                tretBkgExp, ctrlBkgExp, tretNonPeakExp, ctrlNonPeakExp, newTretMethLevel;
         boolean samplingRes;
-        double[] newTretIPReadsExpectation, newCtrlIPReadsExpectation;
+        double[] newTretIPReadsExpectation, newCtrlIPReadsExpectation, tretIPSizeFactors, ctrlIPSizeFactors;
         double logCurParamsProba, logLikeProba, logPrior;
 
         nonspecificEnrich = this.parameters.getNonspecificEnrichment();
@@ -60,11 +60,13 @@ public class SameMethylationLevelModel extends ModelSelection {
         ctrlBkgExp = this.parameters.getCtrlBkgExp();
         tretNonPeakExp = this.parameters.getTretNonPeakBkgExp();
         ctrlNonPeakExp = this.parameters.getCtrlNonPeakBkgExp();
+        tretIPSizeFactors = this.parameters.getTretIPSizeFactors();
+        ctrlIPSizeFactors = this.parameters.getCtrlIPSizeFactors();
         assert Math.abs(tretMethLevel-ctrlMethLevel)<0.00001;
         newTretMethLevel = this.tretMethylationLevelSampler.randomSample(tretMethLevel);
         // renew IP and INPUT reads expectations via new sampling methylation level, shape individualNumber × geneNumber
-        newTretIPReadsExpectation = this.renewReadsExpectationViaMethLevel(true, new double[]{newTretMethLevel}, new double[]{nonspecificEnrich}, this.tretIPSizeFactors);
-        newCtrlIPReadsExpectation = this.renewReadsExpectationViaMethLevel(false, new double[]{newTretMethLevel}, new double[]{nonspecificEnrich}, this.ctrlIPSizeFactors);
+        newTretIPReadsExpectation = this.renewReadsExpectationViaMethLevel(true, new double[]{newTretMethLevel}, new double[]{nonspecificEnrich}, tretIPSizeFactors);
+        newCtrlIPReadsExpectation = this.renewReadsExpectationViaMethLevel(false, new double[]{newTretMethLevel}, new double[]{nonspecificEnrich}, ctrlIPSizeFactors);
         if (curModel) {
             logLikeProba = this.logLikelihood(newTretIPReadsExpectation, this.treatmentINPUTExpectations,
                                               newCtrlIPReadsExpectation, this.controlINPUTExpectations,

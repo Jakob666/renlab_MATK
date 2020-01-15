@@ -40,7 +40,7 @@ public class DiffMethylationLevelModel extends ModelSelection {
                tretMethLevel, ctrlMethLevel, nonspecificEnrich,
                tretBkgExp, ctrlBkgExp, tretNonPeakExp, ctrlNonPeakExp, newTretMethLevel;
         boolean samplingRes;
-        double[] newIPReadsExpectation;
+        double[] newIPReadsExpectation, tretIPSizeFactors;
         double logCurParamsProba, logLikeProba, logPrior;
 
         nonspecificEnrich = this.parameters.getNonspecificEnrichment();
@@ -54,9 +54,10 @@ public class DiffMethylationLevelModel extends ModelSelection {
         ctrlBkgExp = this.parameters.getCtrlBkgExp();
         tretNonPeakExp = this.parameters.getTretNonPeakBkgExp();
         ctrlNonPeakExp = this.parameters.getCtrlNonPeakBkgExp();
+        tretIPSizeFactors = this.parameters.getTretIPSizeFactors();
         newTretMethLevel = this.tretMethylationLevelSampler.randomSample(tretMethLevel);
         // renew IP and INPUT reads expectations via new sampling methylation level, shape individualNumber × geneNumber
-        newIPReadsExpectation = this.renewReadsExpectationViaMethLevel(true, new double[]{newTretMethLevel}, new double[]{nonspecificEnrich}, this.tretIPSizeFactors);
+        newIPReadsExpectation = this.renewReadsExpectationViaMethLevel(true, new double[]{newTretMethLevel}, new double[]{nonspecificEnrich}, tretIPSizeFactors);
         if (curModel) {
             logLikeProba = this.logLikelihood(newIPReadsExpectation, this.treatmentINPUTExpectations,
                                               this.controlIPExpectations, this.controlINPUTExpectations,
@@ -102,7 +103,7 @@ public class DiffMethylationLevelModel extends ModelSelection {
                tretMethLevel, ctrlMethLevel, nonspecificEnrich,
                tretBkgExp, ctrlBkgExp, tretNonPeakExp, ctrlNonPeakExp, newCtrlMethLevel;
         boolean samplingRes;
-        double[] newIPReadsExpectation;
+        double[] newIPReadsExpectation, ctrlIPSizeFactors;
         double logCurParamsProba, logLikeProba, logPrior;
 
         nonspecificEnrich = this.parameters.getNonspecificEnrichment();
@@ -116,9 +117,10 @@ public class DiffMethylationLevelModel extends ModelSelection {
         ctrlBkgExp = this.parameters.getCtrlBkgExp();
         tretNonPeakExp = this.parameters.getTretNonPeakBkgExp();
         ctrlNonPeakExp = this.parameters.getCtrlNonPeakBkgExp();
+        ctrlIPSizeFactors = this.parameters.getCtrlIPSizeFactors();
         newCtrlMethLevel = this.ctrlMethylationLevelSampler.randomSample(ctrlMethLevel);
         // renew IP and INPUT reads expectations via new sampling methylation level, shape individualNumber × geneNumber
-        newIPReadsExpectation = this.renewReadsExpectationViaMethLevel(false, new double[]{newCtrlMethLevel}, new double[]{nonspecificEnrich}, this.ctrlIPSizeFactors);
+        newIPReadsExpectation = this.renewReadsExpectationViaMethLevel(false, new double[]{newCtrlMethLevel}, new double[]{nonspecificEnrich}, ctrlIPSizeFactors);
         if (curModel) {
             logLikeProba = this.logLikelihood(this.treatmentIPExpectations, this.treatmentINPUTExpectations,
                                               newIPReadsExpectation, this.controlINPUTExpectations,

@@ -2,9 +2,10 @@ package Quantification;
 
 public class SamplingRecords {
     private int[][] sampleIPReads, sampleINPUTReads, nonPeakIPReads, nonPeakINPUTReads;
-    private double geneBackgroundExp, nonPeakExpression;
-    private double[] nonSpecificEnrichment, methylationLevels, ipOverdispersions, inputOverdispersions, backgroundExpressions;
+    private double[] nonSpecificEnrichment, methylationLevels, ipOverdispersions, inputOverdispersions, backgroundExpressions, nonPeakExpressions;
+    private double[] ipSizeFactors, inputSizeFactors, ipNonPeakSizeFactors, inputNonPeakSizeFactors;
     private double[][] sampleIPExpectations, sampleINPUTExpectations, nonPeakIPExpectations, nonPeakINPUTExpectations;
+    private BackgroundExpressionSampler bkgExpSampler, nonPeakExpSampler;
 
     public SamplingRecords() {}
 
@@ -28,8 +29,16 @@ public class SamplingRecords {
         this.sampleIPExpectations = sampleIPExpectations;
     }
 
+    public void setSampleINPUTExpectations(double[][] sampleINPUTExpectations) {
+        this.sampleINPUTExpectations = sampleINPUTExpectations;
+    }
+
     public void setNonPeakIPExpectations(double[][] nonPeakIPExpectations) {
         this.nonPeakIPExpectations = nonPeakIPExpectations;
+    }
+
+    public void setNonPeakINPUTExpectations(double[][] nonPeakINPUTExpectations) {
+        this.nonPeakINPUTExpectations = nonPeakINPUTExpectations;
     }
 
     public int[][] getSampleIPReads() {
@@ -128,8 +137,20 @@ public class SamplingRecords {
         return this.inputOverdispersions;
     }
 
+    public void setBkgExpSampler(BackgroundExpressionSampler sampler) {
+        this.bkgExpSampler = sampler;
+    }
+
+    public BackgroundExpressionSampler getBkgExpSampler() {
+        return this.bkgExpSampler;
+    }
+
     public void setBackgroundExpressions(double[] backgroundExpressions) {
         this.backgroundExpressions = backgroundExpressions;
+    }
+
+    public void setBackgroundExpressionValue(double value, int time) {
+        this.backgroundExpressions[time] = value;
     }
 
     public double getBackgroundExpressionValue(int time) {
@@ -140,19 +161,59 @@ public class SamplingRecords {
         return this.backgroundExpressions;
     }
 
-    public void setGeneBackgroundExp(double geneBackgroundExp) {
-        this.geneBackgroundExp = geneBackgroundExp;
+    public void setNonPeakExpSampler(BackgroundExpressionSampler sampler) {
+        this.nonPeakExpSampler = sampler;
     }
 
-    public double getGeneBackgroundExp() {
-        return this.geneBackgroundExp;
+    public BackgroundExpressionSampler getNonPeakExpSampler() {
+        return this.nonPeakExpSampler;
     }
 
-    public void setNonPeakExpression(double nonPeakExpression) {
-        this.nonPeakExpression = nonPeakExpression;
+    public void setNonPeakExpressions(double[] nonPeakExpressions) {
+        this.nonPeakExpressions = nonPeakExpressions;
     }
 
-    public double getNonPeakExpression() {
-        return this.nonPeakExpression;
+    public void setNonPeakExpressionValue(double value, int time) {
+        this.nonPeakExpressions[time] = value;
+    }
+
+    public double getNonPeakExpressionValue(int time) {
+        return this.nonPeakExpressions[time];
+    }
+
+    public double[] getNonPeakExpressions() {
+        return this.nonPeakExpressions;
+    }
+
+    public void setInputSizeFactors(double[] inputSizeFactors) {
+        this.inputSizeFactors = inputSizeFactors;
+    }
+
+    public double[] getInputSizeFactors() {
+        return this.inputSizeFactors;
+    }
+
+    public void setInputNonPeakSizeFactors(double[] inputNonPeakSizeFactors) {
+        this.inputNonPeakSizeFactors = inputNonPeakSizeFactors;
+    }
+
+    public double[] getInputNonPeakSizeFactors() {
+        return this.inputNonPeakSizeFactors;
+    }
+
+    public void setIpSizeFactors(double[] ipSizeFactors) {
+        this.ipSizeFactors = ipSizeFactors;
+    }
+
+    public double[] getIpSizeFactors() {
+        return this.ipSizeFactors;
+    }
+
+    public void setIpNonPeakSizeFactors(double[] ipNonPeakSizeFactors) {
+        this.ipNonPeakSizeFactors = ipNonPeakSizeFactors;
+    }
+
+    public double[] getIpNonPeakSizeFactors() {
+        return this.ipNonPeakSizeFactors;
     }
 }

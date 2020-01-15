@@ -18,11 +18,12 @@ public class MethylationQuantification {
     private MethylationLevelSampler methLevelSampler = null;
     private NonSpecificEnrichmentSampler nonSpecificEnrichmentSampler = null;
     private OverdispersionSampler ipOverdispersionSampler = null, inputOverdispersionSampler = null;
-//    private BackgroundExpressionSampler[] geneBackgroundExpressionSamplers = null;
+    private BackgroundExpressionSampler[] geneBackgroundExpressionSamplers = null, geneNonPeakExpressionSamplers = null;
     private int individualNumber, geneNumber, samplingTime, burnIn, threadNumber;
     private int[][] ipReads, inputReads, ipNonPeak, inputNonPeak;
     private double a, b, c, d, w, k, r1, r2;
     private double[] backgroundExpressionMean, nonPeakBackgroundExpressionMean;
+    private double[] ipSizeFactor, inputSizeFactor, ipNonPeakSizeFactor, inputNonPeakSizeFactor;
     private String outputFile;
     private ConcurrentHashMap<Integer, String> testRecord;
 
@@ -82,21 +83,35 @@ public class MethylationQuantification {
         // background expression expectation and standard deviation, shape 1 × geneNumber
         this.backgroundExpressionMean = be.geneBackgroundExp();
         double[] backgroundExpressionStd = be.geneExpressionStd();
+        this.ipSizeFactor = be.getGlobalIPSizeFactor();
+        this.inputSizeFactor = be.getGlobalINPUTSizeFactor();
+
+        // for each gene, initialize a background expression sampler. cancel background expression sampling
+        this.geneBackgroundExpressionSamplers = new BackgroundExpressionSampler[this.geneNumber];
+        BackgroundExpressionSampler sampler;
+        for (int i=0; i<this.geneNumber; i++) {
+            // shape and scale parameters of log-normal distribution
+            double scale = Math.log(this.backgroundExpressionMean[i]);
+            double shape = backgroundExpressionStd[i];
+            sampler = new BackgroundExpressionSampler(scale, shape);
+            // random init background expression from corresponding distribution
+            this.geneBackgroundExpressionSamplers[i] = sampler;
+        }
 
         be = new BackgroundExpression(this.ipNonPeak, this.inputNonPeak);
         this.nonPeakBackgroundExpressionMean = be.geneBackgroundExp();
-
-        // for each gene, initialize a background expression sampler. cancel background expression sampling
-//        this.geneBackgroundExpressionSamplers = new BackgroundExpressionSampler[this.geneNumber];
-//        BackgroundExpressionSampler sampler;
-//        for (int i=0; i<this.geneNumber; i++) {
-//            // shape and scale parameters of log-normal distribution
-//            double scale = Math.log(backgroundExpressionMean[i]);
-//            double shape = backgroundExpressionStd[i];
-//            sampler = new BackgroundExpressionSampler(scale, shape);
-//            // random init background expression from corresponding distribution
-//            this.geneBackgroundExpressionSamplers[i] = sampler;
-//        }
+        backgroundExpressionStd = be.geneExpressionStd();
+        this.ipNonPeakSizeFactor = be.getGlobalIPSizeFactor();
+        this.inputNonPeakSizeFactor = be.getGlobalINPUTSizeFactor();
+        this.geneNonPeakExpressionSamplers = new BackgroundExpressionSampler[this.geneNumber];
+        for (int i=0; i<this.geneNumber; i++) {
+            // shape and scale parameters of log-normal distribution
+            double scale = Math.log(this.nonPeakBackgroundExpressionMean[i]);
+            double shape = backgroundExpressionStd[i];
+            sampler = new BackgroundExpressionSampler(scale, shape);
+            // random init background expression from corresponding distribution
+            this.geneNonPeakExpressionSamplers[i] = sampler;
+        }
     }
 
     /**
@@ -107,61 +122,68 @@ public class MethylationQuantification {
         CountDownLatch countDownLatch = new CountDownLatch(this.geneNumber);
         ExecutorService threadPool = Executors.newFixedThreadPool(this.threadNumber);
         QuantifyTask task = (sampleIPReads, sampleINPUTReads, sampleIPExpectation, sampleINPUTExpectation,
-                             nonPeakIPReads, nonPeakINPUTReads, nonPeakIPExpectation, nonPeakINPUTExpectation, geneIdx) -> {
-            return () -> {
-                try {
-                    SamplingRecords sr = new SamplingRecords();
-                    double[] nonSpecificEnrichmentRatio = new double[this.samplingTime];
-                    nonSpecificEnrichmentRatio[0] = 0.1;
-                    double[] methylationLevel = new double[this.samplingTime];
-                    methylationLevel[0] = 0.1;
-                    double[] ipOverdispersion = new double[this.samplingTime];
-                    ipOverdispersion[0] = 1;
-                    double[] inputOverdispersion = new double[this.samplingTime];
-                    inputOverdispersion[0] = 1;
-                    double[] backgroundExpression = new double[this.samplingTime];
-                    backgroundExpression[0] = this.backgroundExpressionMean[geneIdx];
+                             nonPeakIPReads, nonPeakINPUTReads, nonPeakIPExpectation, nonPeakINPUTExpectation, geneIdx) -> () -> {
+            try {
+                SamplingRecords sr = new SamplingRecords();
+                double[] nonSpecificEnrichmentRatio = new double[this.samplingTime];
+                nonSpecificEnrichmentRatio[0] = 0.1;
+                double[] methylationLevel = new double[this.samplingTime];
+                methylationLevel[0] = 0.1;
+                double[] ipOverdispersion = new double[this.samplingTime];
+                ipOverdispersion[0] = 1;
+                double[] inputOverdispersion = new double[this.samplingTime];
+                inputOverdispersion[0] = 1;
+                double[] backgroundExpression = new double[this.samplingTime];
+                backgroundExpression[0] = this.backgroundExpressionMean[geneIdx];
+                double[] nonPeakExpression = new double[this.samplingTime];
+                nonPeakExpression[0] = this.nonPeakBackgroundExpressionMean[geneIdx];
 
-                    sr.setReads(sampleIPReads, sampleINPUTReads, nonPeakIPReads, nonPeakINPUTReads);
-                    sr.setExpectations(sampleIPExpectation, sampleINPUTExpectation, nonPeakIPExpectation, nonPeakINPUTExpectation);
-                    sr.setNonSpecificEnrichment(nonSpecificEnrichmentRatio);
-                    sr.setMethylationLevels(methylationLevel);
-                    sr.setIpOverdispersions(ipOverdispersion);
-                    sr.setInputOverdispersions(inputOverdispersion);
-                    sr.setBackgroundExpressions(backgroundExpression);
-                    sr.setGeneBackgroundExp(this.backgroundExpressionMean[geneIdx]);
-                    sr.setNonPeakExpression(this.nonPeakBackgroundExpressionMean[geneIdx]);
+                sr.setReads(sampleIPReads, sampleINPUTReads, nonPeakIPReads, nonPeakINPUTReads);
+                sr.setExpectations(sampleIPExpectation, sampleINPUTExpectation, nonPeakIPExpectation, nonPeakINPUTExpectation);
+                sr.setNonSpecificEnrichment(nonSpecificEnrichmentRatio);
+                sr.setMethylationLevels(methylationLevel);
+                sr.setIpOverdispersions(ipOverdispersion);
+                sr.setInputOverdispersions(inputOverdispersion);
+                sr.setBackgroundExpressions(backgroundExpression);
+                sr.setBkgExpSampler(this.geneBackgroundExpressionSamplers[geneIdx]);
+                sr.setNonPeakExpressions(nonPeakExpression);
+                sr.setNonPeakExpSampler(this.geneNonPeakExpressionSamplers[geneIdx]);
+                sr.setIpSizeFactors(this.ipSizeFactor);
+                sr.setInputSizeFactors(this.inputSizeFactor);
+                sr.setIpNonPeakSizeFactors(this.ipNonPeakSizeFactor);
+                sr.setInputNonPeakSizeFactors(this.inputNonPeakSizeFactor);
 
-                    int time = 0;
-                    while (time < this.samplingTime-1) {
-                        time += 1;
-                        // sampling non-specific enrichment ratio
-                        this.nonSpecificEnrichmentRatioSampling(sr, time);
-                        // sampling methylation level
-                        this.methylationLevelSampling(sr, time);
-                        // sampling INPUT data overdispersion
-                        this.inputOverdispersionSampling(sr, time);
-                        // sampling IP data overdispersion
-                        this.ipOverdispersionSampling(sr, time);
-                        // sampling background expression
-//                        this.geneBackgroundExpressionSampling(sr, time);
-                    }
-
-                    double[] quantificationResult = this.quantify(sr);
-                    String[] res = new String[quantificationResult.length];
-                    for (int i=0; i<quantificationResult.length; i++) {
-                        res[i] = String.valueOf(quantificationResult[i]);
-                    }
-                    String record = String.join("\t", res);
-//                    System.out.println(geneIdx + "\t" + record);
-                    this.testRecord.put(geneIdx, record);
-                } catch (Exception e) {
-                    e.printStackTrace();
-                } finally {
-                    System.out.println(geneIdx+1 + " / " + this.geneNumber);
-                    countDownLatch.countDown();
+                int time = 0;
+                while (time < this.samplingTime-1) {
+                    time += 1;
+                    // sampling non-specific enrichment ratio
+                    this.nonSpecificEnrichmentRatioSampling(sr, time);
+                    // sampling methylation level
+                    this.methylationLevelSampling(sr, time);
+                    // sampling INPUT data overdispersion
+                    this.inputOverdispersionSampling(sr, time);
+                    // sampling IP data overdispersion
+                    this.ipOverdispersionSampling(sr, time);
+                    // sampling background expression
+                    // this.geneBackgroundExpressionSampling(sr, time);
+                    // sampling nonPeak expression
+                    // this.geneNonPeakExpressionSampling(sr, time);
                 }
-            };
+
+                double[] quantificationResult = this.quantify(sr);
+                String[] res = new String[quantificationResult.length];
+                for (int i=0; i<quantificationResult.length; i++) {
+                    res[i] = String.valueOf(quantificationResult[i]);
+                }
+                String record = String.join("\t", res);
+//                    System.out.println(geneIdx + "\t" + record);
+                this.testRecord.put(geneIdx, record);
+            } catch (Exception e) {
+                e.printStackTrace();
+            } finally {
+                System.out.println(geneIdx+1 + " / " + this.geneNumber);
+                countDownLatch.countDown();
+            }
         };
 
         double[] initMethLevel = new double[] {0.1};
@@ -179,10 +201,11 @@ public class MethylationQuantification {
             }
             double[][] sampleIPExpectation, sampleINPUTExpectation, nonPeakIPExpectation, nonPeakINPUTExpectation;
 
-            ReadsExpectation re = new ReadsExpectation(sampleIPReads, sampleINPUTReads, nonPeakIPReads, nonPeakINPUTReads, initMethLevel, initNonSpecificEnrich);
-            sampleIPExpectation = re.getIPReadsExepectation();
+            ReadsExpectation re = new ReadsExpectation(sampleIPReads, sampleINPUTReads, nonPeakIPReads, nonPeakINPUTReads,
+                                                       initMethLevel, initNonSpecificEnrich);
+            sampleIPExpectation = re.getIPReadsExpectation();
             sampleINPUTExpectation = re.getINPUTReadsExpectation();
-            nonPeakIPExpectation = re.getIPNonPeakExepectation();
+            nonPeakIPExpectation = re.getIPNonPeakExpectation();
             nonPeakINPUTExpectation = re.getINPUTNonPeakExpectation();
             re = null;
 
@@ -210,6 +233,7 @@ public class MethylationQuantification {
         double[][] readsData;
         double[] ipCount, inputCount, ipExpectation, inputExpectation, ipNonPeakCount, inputNonPeakCount, ipNonPeakExpCount, inputNonPeakExpCount,
                  prevIPExpectation, prevINPUTExpectation, prevNonPeakIPExpectation, prevNonPeakINPUTExpectation;
+        double[] ipSizeFactors, inputSizeFactors, ipNonPeakSizeFactors, inputNonPeakSizeFactors;
         double ipOverdispersion, inputOverdispersion, methLevel;
         boolean samplingRes;
 
@@ -230,9 +254,12 @@ public class MethylationQuantification {
         // use the new methylation level to calculate IP and INPUT reads count expectations
         // shape individualNumber × geneNumber
         double[][] newIPReadsExpectation, newNonPeakIPExpectation;
-        ReadsExpectation re = new ReadsExpectation(sampleIPReads, sampleINPUTReads, nonPeakIPReads, nonPeakINPUTReads, new double[] {methLevel}, new double[] {curNonSpecificEnrichment});
-        newIPReadsExpectation = re.getIPReadsExepectation();
-        newNonPeakIPExpectation = re.getIPNonPeakExepectation();
+        ipSizeFactors = samplingRecords.getIpSizeFactors();
+        ipNonPeakSizeFactors = samplingRecords.getIpNonPeakSizeFactors();
+        ReadsExpectation re = new ReadsExpectation(sampleIPReads, sampleINPUTReads, nonPeakIPReads, nonPeakINPUTReads,
+                                                   new double[]{methLevel}, new double[]{curNonSpecificEnrichment});
+        newIPReadsExpectation = re.getIPReadsExpectation(ipSizeFactors);
+        newNonPeakIPExpectation = re.getIPNonPeakExpectation(ipNonPeakSizeFactors);
         re = null;
 
         readsData = this.getReadsDataForGene(sampleIPReads, sampleINPUTReads, sampleIPExpectation, sampleINPUTExpectation,
@@ -255,34 +282,28 @@ public class MethylationQuantification {
         ipOverdispersion = samplingRecords.getIpOverdispersionValue(time-1);
         inputOverdispersion = samplingRecords.getInputOverdispersionValue(time-1);
 
-        //        BackgroundExpressionSampler sampler = this.geneBackgroundExpressionSamplers[geneIdx];
-        BackgroundExpressionSampler sampler = null;
-//        double curGeneBkgExp = backgroundExpressions[time-1];
-        double curGeneBkgExp = samplingRecords.getGeneBackgroundExp();
+        BackgroundExpressionSampler sampler = samplingRecords.getBkgExpSampler();
+        double curGeneBkgExp = samplingRecords.getBackgroundExpressionValue(0); // time-1
+        BackgroundExpressionSampler nonPeakSampler = samplingRecords.getNonPeakExpSampler();
+        double nonPeakExp = samplingRecords.getNonPeakExpressionValue(0); // time-1
         prevPosteriorProba = this.logPosteriorProbability(ipCount, inputCount, prevIPExpectation, prevINPUTExpectation,
                                                           ipNonPeakCount, inputNonPeakCount, prevNonPeakIPExpectation, prevNonPeakINPUTExpectation,
-                                                          ipOverdispersion, inputOverdispersion, methLevel, prevNonSpecificEnrichment, sampler, curGeneBkgExp);
+                                                          ipOverdispersion, inputOverdispersion, methLevel, prevNonSpecificEnrichment,
+                                                          sampler, curGeneBkgExp, nonPeakSampler, nonPeakExp);
         curPosteriorProba = this.logPosteriorProbability(ipCount, inputCount, ipExpectation, inputExpectation,
                                                          ipNonPeakCount, inputNonPeakCount, ipNonPeakExpCount, inputNonPeakExpCount,
-                                                         ipOverdispersion, inputOverdispersion, methLevel, curNonSpecificEnrichment, sampler, curGeneBkgExp);
+                                                         ipOverdispersion, inputOverdispersion, methLevel, curNonSpecificEnrichment,
+                                                         sampler, curGeneBkgExp, nonPeakSampler, nonPeakExp);
 
         samplingRes = this.nonSpecificEnrichmentSampler.getSamplingRes(curPosteriorProba, prevPosteriorProba, true);
         // if samplingRes is true, means the new sampling value was accepted, also need to renew reads count expectation
         if (samplingRes) {
             samplingRecords.setNonSpecificEnrichmentRatio(curNonSpecificEnrichment, time);
-//            this.renewReadsExpectation(sampleIPExpectation, ipExpectation);
             samplingRecords.setSampleIPExpectations(newIPReadsExpectation);
             samplingRecords.setNonPeakIPExpectations(newNonPeakIPExpectation);
         } else { // otherwise, the methylation level of new iteration is same as the previous iteration
             samplingRecords.setNonSpecificEnrichmentRatio(prevNonSpecificEnrichment, time);
         }
-
-        readsData = null;
-        newIPReadsExpectation = null;
-        ipCount = null;
-        inputCount = null;
-        ipExpectation = null;
-        inputExpectation = null;
     }
 
     /**
@@ -313,9 +334,10 @@ public class MethylationQuantification {
         nonSpecificEnrichRatio = samplingRecords.getNonSpecificEnrichmentRatio(time);
         // use the new methylation level to calculate IP and INPUT reads count expectations
         // shape individualNumber × geneNumber
+        double[] ipSizeFactors = samplingRecords.getIpSizeFactors();
         double[][] newIPReadsExpectation;
         ReadsExpectation re = new ReadsExpectation(sampleIPReads, sampleINPUTReads, nonPeakIPReads, nonPeakINPUTReads, new double[] {curMethLevel}, new double[] {nonSpecificEnrichRatio});
-        newIPReadsExpectation = re.getIPReadsExepectation();
+        newIPReadsExpectation = re.getIPReadsExpectation(ipSizeFactors);
         re = null;
 
         // get IP and INPUT gene reads count expectation of each individual, shape 1 × individualNumber
@@ -337,33 +359,27 @@ public class MethylationQuantification {
         ipOverdispersion = samplingRecords.getIpOverdispersionValue(time-1);
         inputOverdispersion = samplingRecords.getInputOverdispersionValue(time-1);
 
-//        BackgroundExpressionSampler sampler = this.geneBackgroundExpressionSamplers[geneIdx];
-        BackgroundExpressionSampler sampler = null;
-//        double curGeneBkgExp = backgroundExpressions[time-1];
-        double curGeneBkgExp = samplingRecords.getGeneBackgroundExp();
+        BackgroundExpressionSampler sampler = samplingRecords.getBkgExpSampler();
+        double curGeneBkgExp = samplingRecords.getBackgroundExpressionValue(0); // time-1
+        BackgroundExpressionSampler nonPeakSampler = samplingRecords.getNonPeakExpSampler();
+        double nonPeakExp = samplingRecords.getNonPeakExpressionValue(0); // time-1
         prevPosteriorProba = this.logPosteriorProbability(ipCount, inputCount, prevIPExpectation, prevINPUTExpectation,
                                                           ipNonPeakCount, inputNonPeakCount, ipNonPeakExpCount, inputNonPeakExpCount,
-                                                          ipOverdispersion, inputOverdispersion, prevMethLevel, nonSpecificEnrichRatio, sampler, curGeneBkgExp);
+                                                          ipOverdispersion, inputOverdispersion, prevMethLevel, nonSpecificEnrichRatio,
+                                                          sampler, curGeneBkgExp, nonPeakSampler, nonPeakExp);
         curPosteriorProba = this.logPosteriorProbability(ipCount, inputCount, ipExpectation, inputExpectation,
                                                          ipNonPeakCount, inputNonPeakCount, ipNonPeakExpCount, inputNonPeakExpCount,
-                                                         ipOverdispersion, inputOverdispersion, curMethLevel, nonSpecificEnrichRatio, sampler, curGeneBkgExp);
+                                                         ipOverdispersion, inputOverdispersion, curMethLevel, nonSpecificEnrichRatio,
+                                                         sampler, curGeneBkgExp, nonPeakSampler, nonPeakExp);
 
         samplingRes = this.methLevelSampler.getSamplingRes(curPosteriorProba, prevPosteriorProba, true);
         // if samplingRes is true, means the new sampling value was accepted, also need to renew reads count expectation
         if (samplingRes) {
             samplingRecords.setMethylationLevelValue(curMethLevel, time);
-//            this.renewReadsExpectation(sampleIPExpectation, ipExpectation);
             samplingRecords.setSampleIPExpectations(newIPReadsExpectation);
         } else { // otherwise, the methylation level of new iteration is same as the previous iteration
             samplingRecords.setMethylationLevelValue(prevMethLevel, time);
         }
-
-        readsData = null;
-        newIPReadsExpectation = null;
-        ipCount = null;
-        inputCount = null;
-        ipExpectation = null;
-        inputExpectation = null;
     }
 
     /**
@@ -401,16 +417,18 @@ public class MethylationQuantification {
         curINPUTOverdispersion = this.inputOverdispersionSampler.randomSample(prevINPUTOverdispersion);
         curIPOverdispersion = samplingRecords.getIpOverdispersionValue(time-1);
 
-//        BackgroundExpressionSampler sampler = this.geneBackgroundExpressionSamplers[geneIdx];
-        BackgroundExpressionSampler sampler = null;
-//        double curGeneBkgExp = backgroundExpressions[time-1];
-        double curGeneBkgExp = samplingRecords.getGeneBackgroundExp();
+        BackgroundExpressionSampler sampler = samplingRecords.getBkgExpSampler();
+        double curGeneBkgExp = samplingRecords.getBackgroundExpressionValue(0); // time-1
+        BackgroundExpressionSampler nonPeakSampler = samplingRecords.getNonPeakExpSampler();
+        double nonPeakExp = samplingRecords.getNonPeakExpressionValue(0); // time-1
         prevPosteriorProba = this.logPosteriorProbability(ipCount, inputCount, ipExpectation, inputExpectation,
                                                           ipNonPeakCount, inputNonPeakCount, ipNonPeakExpCount, inputNonPeakExpCount,
-                                                          curIPOverdispersion, prevINPUTOverdispersion, curMethLevel, curNonSpecificEnrich, sampler, curGeneBkgExp);
+                                                          curIPOverdispersion, prevINPUTOverdispersion, curMethLevel, curNonSpecificEnrich,
+                                                          sampler, curGeneBkgExp, nonPeakSampler, nonPeakExp);
         curPosteriorProba = this.logPosteriorProbability(ipCount, inputCount, ipExpectation, inputExpectation,
                                                          ipNonPeakCount, inputNonPeakCount, ipNonPeakExpCount, inputNonPeakExpCount,
-                                                         curIPOverdispersion, curINPUTOverdispersion, curMethLevel, curNonSpecificEnrich, sampler, curGeneBkgExp);
+                                                         curIPOverdispersion, curINPUTOverdispersion, curMethLevel, curNonSpecificEnrich,
+                                                         sampler, curGeneBkgExp, nonPeakSampler, nonPeakExp);
 
         samplingRes = this.inputOverdispersionSampler.getSamplingRes(curPosteriorProba, prevPosteriorProba, true);
         // if samplingRes is true, means the new sampling value was accepted
@@ -419,12 +437,6 @@ public class MethylationQuantification {
         } else { // otherwise, rejected
             samplingRecords.setInputOverdispersionValue(prevINPUTOverdispersion, time);
         }
-
-        readsData = null;
-        ipCount = null;
-        inputCount = null;
-        ipExpectation = null;
-        inputExpectation = null;
     }
 
     /**
@@ -462,16 +474,19 @@ public class MethylationQuantification {
         curIPOverdispersion = this.ipOverdispersionSampler.randomSample(prevIPOverdispersion);
         curINPUTOverdispersion = samplingRecords.getInputOverdispersionValue(time);
 
-//        BackgroundExpressionSampler sampler = this.geneBackgroundExpressionSamplers[geneIdx];
-        BackgroundExpressionSampler sampler = null;
-//        double curGeneBkgExp = backgroundExpressions[time-1];
-        double curGeneBkgExp = samplingRecords.getGeneBackgroundExp();
+        BackgroundExpressionSampler sampler = samplingRecords.getBkgExpSampler();
+        double curGeneBkgExp = samplingRecords.getBackgroundExpressionValue(0); // time-1
+        BackgroundExpressionSampler nonPeakSampler = samplingRecords.getNonPeakExpSampler();
+        double nonPeakExp = samplingRecords.getNonPeakExpressionValue(0); // time-1
         prevPosteriorProba = this.logPosteriorProbability(ipCount, inputCount, ipExpectation, inputExpectation,
                                                           ipNonPeakCount, inputNonPeakCount, ipNonPeakExpCount, inputNonPeakExpCount,
-                                                          prevIPOverdispersion, curINPUTOverdispersion, curMethLevel, curNonSpecificEnrich, sampler, curGeneBkgExp);
+                                                          prevIPOverdispersion, curINPUTOverdispersion, curMethLevel, curNonSpecificEnrich,
+                                                          sampler, curGeneBkgExp, nonPeakSampler, nonPeakExp);
+
         curPosteriorProba = this.logPosteriorProbability(ipCount, inputCount, ipExpectation, inputExpectation,
                                                          ipNonPeakCount, inputNonPeakCount, ipNonPeakExpCount, inputNonPeakExpCount,
-                                                         curIPOverdispersion, curINPUTOverdispersion, curMethLevel,curNonSpecificEnrich, sampler, curGeneBkgExp);
+                                                         curIPOverdispersion, curINPUTOverdispersion, curMethLevel,curNonSpecificEnrich,
+                                                         sampler, curGeneBkgExp, nonPeakSampler, nonPeakExp);
 
         samplingRes = this.ipOverdispersionSampler.getSamplingRes(curPosteriorProba, prevPosteriorProba, true);
         // if samplingRes is true, means the new sampling value was accepted
@@ -480,12 +495,6 @@ public class MethylationQuantification {
         } else { // otherwise, rejected
             samplingRecords.setIpOverdispersionValue(prevIPOverdispersion, time);
         }
-
-        readsData = null;
-        ipCount = null;
-        inputCount = null;
-        ipExpectation = null;
-        inputExpectation = null;
     }
 
     /**
@@ -509,26 +518,20 @@ public class MethylationQuantification {
         double[][] nonPeakIPExpectation = samplingRecords.getNonPeakIPExpectations();
         double[][] nonPeakINPUTExpectation = samplingRecords.getNonPeakINPUTExpectations();
 
-//        BackgroundExpressionSampler sampler = this.geneBackgroundExpressionSamplers[geneIdx];
-
-        // gene's new background expression
-//        curBackgroundExp = sampler.randomSample(backgroundExpressions[time-1]);
+        // gene's new expression value in peak region
+        BackgroundExpressionSampler sampler = samplingRecords.getBkgExpSampler();
         prevBackgroundExp = samplingRecords.getBackgroundExpressionValue(time-1);
-        curBackgroundExp = prevBackgroundExp;
+        curBackgroundExp = sampler.randomSample(prevBackgroundExp);
         // use the new background expression value to calculate IP and INPUT reads count expectations
         // shape individualNumber × geneNumber
         double[] curMethLevel = new double[] {samplingRecords.getMethylationLevelValue(time)};
         double[] curNonSpecificEnrich = new double[] {samplingRecords.getNonSpecificEnrichmentRatio(time)};
         double[][] newIPReadsExpectation, newINPUTReadsExpectation;
-        ReadsExpectation re = new ReadsExpectation(sampleIPReads, sampleINPUTReads, nonPeakIPReads, nonPeakINPUTReads, curMethLevel, curNonSpecificEnrich);
-        newIPReadsExpectation = re.getIPReadsExepectation();
+        ReadsExpectation re = new ReadsExpectation(sampleIPReads, sampleINPUTReads, nonPeakIPReads, nonPeakINPUTReads,
+                                                   curMethLevel, curNonSpecificEnrich, new double[]{curBackgroundExp}, true);
+        newIPReadsExpectation = re.getIPReadsExpectation();
         newINPUTReadsExpectation = re.getINPUTReadsExpectation();
         re = null;
-
-        // background expression sampler for corresponding gene
-//        sampler = this.geneBackgroundExpressionSamplers[geneIdx];
-        BackgroundExpressionSampler sampler = null;
-//        prevBackgroundExp = backgroundExpressions[time-1];
 
         // get IP and INPUT gene reads count expectation of each individual, shape 1 × individualNumber
         readsData = this.getReadsDataForGene(sampleIPReads, sampleINPUTReads, sampleIPExpectation, sampleINPUTExpectation,
@@ -551,29 +554,100 @@ public class MethylationQuantification {
 
         double meth = samplingRecords.getMethylationLevelValue(time);
         double nonSpecificEnrich = samplingRecords.getNonSpecificEnrichmentRatio(time);
+        BackgroundExpressionSampler nonPeakSampler = samplingRecords.getNonPeakExpSampler();
+        double nonPeakExp = samplingRecords.getNonPeakExpressionValue(time-1);
         prevPosteriorProba = this.logPosteriorProbability(ipCount, inputCount, prevIPExpectation, prevINPUTExpectation,
                                                           ipNonPeakCount, inputNonPeakCount, ipNonPeakExpCount, inputNonPeakExpCount,
-                                                          ipOverdispersion, inputOverdispersion, meth, nonSpecificEnrich, sampler, prevBackgroundExp);
+                                                          ipOverdispersion, inputOverdispersion, meth, nonSpecificEnrich,
+                                                          sampler, prevBackgroundExp, nonPeakSampler, nonPeakExp);
         curPosteriorProba = this.logPosteriorProbability(ipCount, inputCount, ipExpectation, inputExpectation,
                                                          ipNonPeakCount, inputNonPeakCount, ipNonPeakExpCount, inputNonPeakExpCount,
-                                                         ipOverdispersion, inputOverdispersion, meth, nonSpecificEnrich, sampler, curBackgroundExp);
+                                                         ipOverdispersion, inputOverdispersion, meth, nonSpecificEnrich,
+                                                         sampler, curBackgroundExp, nonPeakSampler, nonPeakExp);
 
-//        samplingRes = sampler.getSamplingRes(curPosteriorProba, prevPosteriorProba, true);
-//        // if samplingRes is true, means the new sampling value was accepted, also need to renew reads count expectation
-//        if (samplingRes) {
-//            backgroundExpressions[time] = curBackgroundExp;
-//            this.renewReadsExpectation(sampleIPExpectation, ipExpectation);
-//        } else { // otherwise, the methylation level of new iteration is same as the previous iteration
-//            backgroundExpressions[time] = prevBackgroundExp;
-//        }
+        samplingRes = sampler.getSamplingRes(curPosteriorProba, prevPosteriorProba, true);
+        // if samplingRes is true, means the new sampling value was accepted, also need to renew reads count expectation
+        if (samplingRes) {
+            samplingRecords.setBackgroundExpressionValue(curBackgroundExp, time);
+            samplingRecords.setSampleIPExpectations(newIPReadsExpectation);
+            samplingRecords.setSampleINPUTExpectations(newINPUTReadsExpectation);
+        } else { // otherwise, the methylation level of new iteration is same as the previous iteration
+            samplingRecords.setBackgroundExpressionValue(prevBackgroundExp, time);
+        }
+    }
 
-        readsData = null;
-        newIPReadsExpectation = null;
-        newINPUTReadsExpectation = null;
-        ipCount = null;
-        inputCount = null;
-        ipExpectation = null;
-        inputExpectation = null;
+    private void geneNonPeakExpressionSampling(SamplingRecords samplingRecords, int time) {
+        double curNonPeakExp, curPosteriorProba, prevNonPeakExp, prevPosteriorProba;
+        double[][] readsData;
+        double[] ipCount, inputCount, ipExpectation, inputExpectation, prevIPExpectation, prevINPUTExpectation,
+                ipNonPeakCount, inputNonPeakCount, ipNonPeakExpCount, inputNonPeakExpCount;
+        double ipOverdispersion, inputOverdispersion;
+        boolean samplingRes;
+
+        int[][] sampleIPReads = samplingRecords.getSampleIPReads();
+        int[][] sampleINPUTReads = samplingRecords.getSampleINPUTReads();
+        int[][] nonPeakIPReads = samplingRecords.getNonPeakIPReads();
+        int[][] nonPeakINPUTReads = samplingRecords.getNonPeakINPUTReads();
+        double[][] sampleIPExpectation = samplingRecords.getSampleIPExpectations();
+        double[][] sampleINPUTExpectation = samplingRecords.getSampleINPUTExpectations();
+        double[][] nonPeakIPExpectation = samplingRecords.getNonPeakIPExpectations();
+        double[][] nonPeakINPUTExpectation = samplingRecords.getNonPeakINPUTExpectations();
+
+        BackgroundExpressionSampler sampler = samplingRecords.getNonPeakExpSampler();
+        prevNonPeakExp = samplingRecords.getNonPeakExpressionValue(time-1);
+        curNonPeakExp = sampler.randomSample(prevNonPeakExp);
+        // use the new background expression value to calculate IP and INPUT reads count expectations shape individualNumber × geneNumber
+        double[] curMethLevel = new double[] {samplingRecords.getMethylationLevelValue(time)};
+        double[] curNonSpecificEnrich = new double[] {samplingRecords.getNonSpecificEnrichmentRatio(time)};
+        double[][] newIPReadsExpectation, newINPUTReadsExpectation;
+        ReadsExpectation re = new ReadsExpectation(sampleIPReads, sampleINPUTReads, nonPeakIPReads, nonPeakINPUTReads,
+                                                   curMethLevel, curNonSpecificEnrich, new double[]{curNonPeakExp}, false);
+        newIPReadsExpectation = re.getIPReadsExpectation();
+        newINPUTReadsExpectation = re.getINPUTReadsExpectation();
+        re = null;
+
+        // get IP and INPUT gene reads count expectation of each individual, shape 1 × individualNumber
+        readsData = this.getReadsDataForGene(sampleIPReads, sampleINPUTReads, sampleIPExpectation, sampleINPUTExpectation,
+                                             nonPeakIPReads, nonPeakINPUTReads, nonPeakIPExpectation, nonPeakINPUTExpectation);
+        prevIPExpectation = readsData[2];
+        prevINPUTExpectation = readsData[3];
+
+        readsData = this.getReadsDataForGene(sampleIPReads, sampleINPUTReads, sampleIPExpectation, sampleINPUTExpectation,
+                                             nonPeakIPReads, nonPeakINPUTReads, newIPReadsExpectation, newINPUTReadsExpectation);
+        ipCount = readsData[0];
+        inputCount = readsData[1];
+        ipExpectation = readsData[2];
+        inputExpectation = readsData[3];
+        ipNonPeakCount = readsData[4];
+        inputNonPeakCount = readsData[5];
+        ipNonPeakExpCount = readsData[6];
+        inputNonPeakExpCount = readsData[7];
+        ipOverdispersion = samplingRecords.getIpOverdispersionValue(time);
+        inputOverdispersion = samplingRecords.getInputOverdispersionValue(time);
+
+        double meth = samplingRecords.getMethylationLevelValue(time);
+        double nonSpecificEnrich = samplingRecords.getNonSpecificEnrichmentRatio(time);
+        BackgroundExpressionSampler bkgSampler = samplingRecords.getBkgExpSampler();
+        double backgroundExp = samplingRecords.getBackgroundExpressionValue(time);
+        prevPosteriorProba = this.logPosteriorProbability(ipCount, inputCount, ipExpectation, inputExpectation,
+                                                          ipNonPeakCount, inputNonPeakCount, prevIPExpectation, prevINPUTExpectation,
+                                                          ipOverdispersion, inputOverdispersion, meth, nonSpecificEnrich,
+                                                          bkgSampler, backgroundExp, sampler, prevNonPeakExp);
+
+        curPosteriorProba = this.logPosteriorProbability(ipCount, inputCount, ipExpectation, inputExpectation,
+                                                         ipNonPeakCount, inputNonPeakCount, ipNonPeakExpCount, inputNonPeakExpCount,
+                                                         ipOverdispersion, inputOverdispersion, meth, nonSpecificEnrich,
+                                                         bkgSampler, backgroundExp, sampler, curNonPeakExp);
+
+        samplingRes = sampler.getSamplingRes(curPosteriorProba, prevPosteriorProba, true);
+        // if samplingRes is true, means the new sampling value was accepted, also need to renew reads count expectation
+        if (samplingRes) {
+            samplingRecords.setNonPeakExpressionValue(curNonPeakExp, time);
+            samplingRecords.setNonPeakIPExpectations(newIPReadsExpectation);
+            samplingRecords.setNonPeakINPUTExpectations(nonPeakINPUTExpectation);
+        } else { // otherwise, the methylation level of new iteration is same as the previous iteration
+            samplingRecords.setNonPeakExpressionValue(prevNonPeakExp, time);
+        }
     }
 
     /**
@@ -610,15 +684,6 @@ public class MethylationQuantification {
     }
 
     /**
-     * renew IP reads expectation if a new methylation level value is accepted
-     */
-    private void renewReadsExpectation(double[][] sampleIPExpectation, double[] ipReadsExpectation) {
-        for (int i=0; i<this.individualNumber; i++) {
-            sampleIPExpectation[i][0] = ipReadsExpectation[i];
-        }
-    }
-
-    /**
      * posterior distribution computation
      * @param ipReadsCount reads count of each individual cover on a particular gene in IP data, shape 1 × individualNumber
      * @param inputReadsCount reads count of each individual cover on a particular gene in INPUT data, shape 1 × individualNumber
@@ -627,7 +692,7 @@ public class MethylationQuantification {
      * @param ipOverdispersion reads count overdispersion of IP data
      * @param inputOverdispersion reads count overdispersion of INPUT data
      * @param methLevel methylation level
-     * @param sampler background expression sampler of a single gene
+     * @param bkgExpSampler background expression sampler of a single gene
      * @param backgroundExp background expression value
      * @return posterior distribution
      */
@@ -636,19 +701,23 @@ public class MethylationQuantification {
                                            double[] ipNonPeakCount, double[] inputNonPeakCount,
                                            double[] ipNonPeakExpCount, double[] inputNonPeakExpCount,
                                            double ipOverdispersion, double inputOverdispersion,
-                                           double methLevel, double nonSpecifcEnrichment,
-                                           BackgroundExpressionSampler sampler, double backgroundExp) {
-        double nonSpecificEnrichProba = this.nonSpecificEnrichmentSampler.getLogDensity(nonSpecifcEnrichment);
+                                           double methLevel, double nonSpecificEnrichment,
+                                           BackgroundExpressionSampler bkgExpSampler, double backgroundExp,
+                                           BackgroundExpressionSampler nonPeakExpSampler, double nonPeakExp) {
+        double nonSpecificEnrichProba = this.nonSpecificEnrichmentSampler.getLogDensity(nonSpecificEnrichment);
         double methLevelProba = this.methLevelSampler.getLogDensity(methLevel);
         double ipOverdispersionProba = this.ipOverdispersionSampler.getLogDensity(ipOverdispersion);
         double inputOverdispersionProba = this.inputOverdispersionSampler.getLogDensity(inputOverdispersion);
-//        double backgroundExpressionProba = sampler.getLogDensity(backgroundExp);
+        double backgroundExpressionProba = bkgExpSampler.getLogDensity(backgroundExp);
+        double nonPeakExpressionProba = nonPeakExpSampler.getLogDensity(nonPeakExp);
 
         double ipIndividualProba = ProbabilityCalculator.logNegativeProbability(ipReadsCount, ipExpectation, ipOverdispersion);
         double inputIndividualProba = ProbabilityCalculator.logNegativeProbability(inputReadsCount, inputExpectation, inputOverdispersion);
         double ipNonPeakProba = ProbabilityCalculator.logNegativeProbability(ipNonPeakCount, ipNonPeakExpCount, ipOverdispersion);
         double inputNonPeakProba = ProbabilityCalculator.logNegativeProbability(inputNonPeakCount, inputNonPeakExpCount, inputOverdispersion);
-        return nonSpecificEnrichProba + methLevelProba + ipOverdispersionProba + inputOverdispersionProba + ipIndividualProba + inputIndividualProba + ipNonPeakProba + inputNonPeakProba;    // + backgroundExpressionProba;
+
+        return nonSpecificEnrichProba + methLevelProba + ipOverdispersionProba + inputOverdispersionProba
+               + ipIndividualProba + inputIndividualProba + ipNonPeakProba + inputNonPeakProba + backgroundExpressionProba + nonPeakExpressionProba;    //
     }
 
     /**
@@ -660,31 +729,31 @@ public class MethylationQuantification {
         double[] methLevelRemainValues = new double[keepNum];
         double[] ipOverdispersionRemainValues = new double[keepNum];
         double[] inputOverdispersionRemainValues = new double[keepNum];
+        double[] backgroundExpressionRemainValues = new double[keepNum];
+        double[] nonPeakExpressionRemainValues = new double[keepNum];
 
         double[] nonSpecificEnrichment = samplingRecords.getNonSpecificEnrichment();
         double[] methylationLevels = samplingRecords.getMethylationLevels();
         double[] ipOverdispersions = samplingRecords.getIpOverdispersions();
         double[] inputOverdispersions = samplingRecords.getInputOverdispersions();
         double[] backgroundExpressions = samplingRecords.getBackgroundExpressions();
+        double[] nonPeakExpressions = samplingRecords.getNonPeakExpressions();
         System.arraycopy(nonSpecificEnrichment, this.burnIn-1, nonSpecificEnrichRemainValues, 0, keepNum);
         System.arraycopy(methylationLevels, this.burnIn-1, methLevelRemainValues, 0, keepNum);
         System.arraycopy(ipOverdispersions, this.burnIn-1, ipOverdispersionRemainValues, 0, keepNum);
         System.arraycopy(inputOverdispersions, this.burnIn-1, inputOverdispersionRemainValues, 0, keepNum);
+        System.arraycopy(backgroundExpressions, this.burnIn-1, backgroundExpressionRemainValues, 0, keepNum);
+        System.arraycopy(nonPeakExpressions, this.burnIn-1, nonPeakExpressionRemainValues, 0, keepNum);
 
-//        double[] geneBackgroundExpressionRemainValue = null;
-//
-//        geneBackgroundExpressionRemainValue = new double[keepNum];
-//        System.arraycopy(backgroundExpressions, this.burnIn-1, geneBackgroundExpressionRemainValue, 0, keepNum);
-
-        double nonSpecificEnrich, methylationValue, ipOverdispersionValue, inputOverdispersionValue, backgroundExpressionValue;
+        double nonSpecificEnrich, methylationValue, ipOverdispersionValue, inputOverdispersionValue, backgroundExpressionValue, nonPeakExpressionValue;
         nonSpecificEnrich = this.distributionMedian(nonSpecificEnrichRemainValues);
         methylationValue = this.distributionMedian(methLevelRemainValues);
         ipOverdispersionValue = this.distributionMedian(ipOverdispersionRemainValues);
         inputOverdispersionValue = this.distributionMedian(inputOverdispersionRemainValues);
-//        backgroundExpressionValue = this.distributionMedian(geneBackgroundExpressionRemainValue);
-        backgroundExpressionValue = samplingRecords.getGeneBackgroundExp();
+        backgroundExpressionValue = this.distributionMedian(backgroundExpressionRemainValues);
+        nonPeakExpressionValue = this.distributionMedian(nonPeakExpressionRemainValues);
 
-        return new double[] {nonSpecificEnrich, methylationValue, ipOverdispersionValue, inputOverdispersionValue, backgroundExpressionValue};
+        return new double[] {nonSpecificEnrich, methylationValue, ipOverdispersionValue, inputOverdispersionValue, backgroundExpressionValue, nonPeakExpressionValue};
     }
 
     /**
@@ -711,7 +780,7 @@ public class MethylationQuantification {
         BufferedWriter bfw = null;
         try {
             bfw = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(new File(this.outputFile))));
-            bfw.write("#index\tnon-specificEnrichment\tmethylationLevel\tipOverdispersion\tinputOverdispersion\tbackgroundExpression\n");
+            bfw.write("#index\tnon-specificEnrichment\tmethylationLevel\tipOverdispersion\tinputOverdispersion\tbackgroundExpression\tnonPeakExpression\n");
             ArrayList<Integer> sortedIdx = new ArrayList<>(this.testRecord.keySet().stream().sorted((o1, o2) -> o1 - o2).collect(Collectors.toList()));
             for (Integer idx: sortedIdx) {
                 bfw.write(idx + "\t" + this.testRecord.get(idx));
@@ -727,6 +796,7 @@ public class MethylationQuantification {
                     e.printStackTrace();
                 }
             }
+            this.testRecord.clear();
         }
     }
 }
