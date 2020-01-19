@@ -3,6 +3,7 @@ package Quantification;
 import SeqDataModel.NonSpecificEnrichment;
 import org.apache.commons.math3.distribution.NormalDistribution;
 
+@Deprecated
 public class NonSpecificEnrichmentSampler extends MHSampling {
     private NonSpecificEnrichment nse;
     private NormalDistribution nd;

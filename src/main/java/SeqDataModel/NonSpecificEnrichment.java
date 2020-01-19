@@ -2,6 +2,7 @@ package SeqDataModel;
 
 import org.apache.commons.math3.distribution.BetaDistribution;
 
+@Deprecated
 public class NonSpecificEnrichment {
     private BetaDistribution bd;
 

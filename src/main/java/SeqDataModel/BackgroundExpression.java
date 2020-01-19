@@ -1,20 +1,29 @@
 package SeqDataModel;
 
-import org.apache.commons.math3.distribution.LogNormalDistribution;
-
-import java.util.Arrays;
-
+/**
+ * Background expression in the i th peak region, suppose there are m samples
+ *               1        X_input,i,j
+ *      exp_i = --- sum(---------------)    j from 1 to m
+ *               m       size-factor_j
+ *
+ * where X_input,i,j is the reads count in i th peak region of the j th sample
+ *       size-factor_j is the j th sample's size factor
+ */
 public class BackgroundExpression {
+    private int individualNumber, geneNumber;
     private int[][] ipGenesReads, inputGeneReads;
+    private double[] inputSizeFactors = null;
 
     /**
      * Constructor
-     * @param ipGenesReads IP gene reads, shape m×n, where m denotes as individual number, n denote as gene number
-     * @param inputGeneReads INPUT gene reads, shape m×n, where m denotes as individual number, n denote as gene number
+     * @param ipGenesReads IP gene reads, shape individual number × gene number
+     * @param inputGeneReads INPUT gene reads, shape individual number × gene number
      */
     public BackgroundExpression(int[][] ipGenesReads, int[][] inputGeneReads) {
         // has same individual number
         assert ipGenesReads.length == inputGeneReads.length;
+        this.individualNumber = ipGenesReads.length;
+        this.geneNumber = ipGenesReads[0].length;
         this.ipGenesReads = ipGenesReads;
         this.inputGeneReads = inputGeneReads;
     }
@@ -23,15 +32,31 @@ public class BackgroundExpression {
      * calculate global IP size factor for each individual
      * @return IP size factor, shape 1 × individualNumber
      */
-    private double[] getGlobalSizeFactor() {
-        // shape 1 × individualNumber
-        double[] individualSizeFactors = new double[ipGenesReads.length];
-        for (int i=0; i<individualSizeFactors.length; i++) {
+    public double[] getGlobalIPSizeFactor() {
+        double[] individualSizeFactors = new double[this.individualNumber];  // shape 1 × individualNumber
+        for (int i=0; i<this.individualNumber; i++) {
             // reads count of genes in IP and INPUT data of individual i
             int[] individualIPReads = this.ipGenesReads[i], individualINPUTReads = this.inputGeneReads[i];
             SizeFactor sf = new SizeFactor(individualIPReads, individualINPUTReads);
-            // individual i's size factor
-            double sizeFactor = sf.getSizeFactor(false);
+            double sizeFactor = sf.getSizeFactor(false);   // individual i's size factor
+            sf = null;
+            individualSizeFactors[i] = sizeFactor;
+        }
+
+        return individualSizeFactors;
+    }
+
+    /**
+     * calculate global INPUT size factor for each individual
+     * @return IP size factor, shape 1 × individualNumber
+     */
+    public double[] getGlobalINPUTSizeFactor() {
+        double[] individualSizeFactors = new double[this.individualNumber];  // shape 1 × individualNumber
+        for (int i=0; i<this.individualNumber; i++) {
+            // reads count of genes in IP and INPUT data of individual i
+            int[] individualIPReads = this.ipGenesReads[i], individualINPUTReads = this.inputGeneReads[i];
+            SizeFactor sf = new SizeFactor(individualIPReads, individualINPUTReads);
+            double sizeFactor = sf.getSizeFactor(true);   // individual i's size factor
             sf = null;
             individualSizeFactors[i] = sizeFactor;
         }
@@ -44,28 +69,57 @@ public class BackgroundExpression {
      * @return gene background expression, shape 1 × geneNumber
      */
     public double[] geneBackgroundExp() {
-        // shape 1 × individualNumber
-        double[] individualSizeFactors = this.getGlobalSizeFactor();
-        // shape 1 × geneNumber
-        double[] genesBkgExp = new double[this.ipGenesReads[0].length];
+        this.inputSizeFactors = this.getGlobalINPUTSizeFactor();   // shape 1 × individualNumber
+        double[] genesBkgExp = new double[this.geneNumber];  // shape 1 × geneNumber
 
-        int individualNumber = individualSizeFactors.length;
-        for (int individualIdx=0; individualIdx<individualNumber; individualIdx++) {
-            double individualSizeFactor = individualSizeFactors[individualIdx];
-            int[] individualGeneReads = this.ipGenesReads[individualIdx];
+        for (int individualIdx=0; individualIdx<this.individualNumber; individualIdx++) {
+            double individualSizeFactor = this.inputSizeFactors[individualIdx];
+            int[] individualGeneReads = this.inputGeneReads[individualIdx];  // one sample INPUT data observed reads
 
-            for (int geneIdx=0; geneIdx<genesBkgExp.length; geneIdx++) {
+            for (int geneIdx=0; geneIdx<this.geneNumber; geneIdx++) {
                 genesBkgExp[geneIdx] += individualGeneReads[geneIdx] / individualSizeFactor;
             }
         }
 
         for (int geneIdx=0; geneIdx<genesBkgExp.length; geneIdx++) {
-            genesBkgExp[geneIdx] = genesBkgExp[geneIdx] / individualNumber;
+            genesBkgExp[geneIdx] = genesBkgExp[geneIdx] / this.individualNumber;
         }
 
         return genesBkgExp;
-        // TODO:当作用于实际数据时改用上一行被注释的代码
-//        double[] res = new double[genesBkgExp.length];
+        // only for simulation data test
+//        double[] res = new double[this.geneNumber];
+//        for (int geneIdx=0; geneIdx<genesBkgExp.length; geneIdx++) {
+//            res[geneIdx] = 500;
+//        }
+//        return res;
+    }
+
+    /**
+     * calculate gene expression for each gene
+     * @return gene background expression, shape 1 × geneNumber
+     */
+    public double[] geneBackgroundExp(double[] individualINPUTSizeFactors) {
+        // shape 1 × individualNumber
+        this.inputSizeFactors = individualINPUTSizeFactors;
+        // shape 1 × geneNumber
+        double[] genesBkgExp = new double[this.geneNumber];
+
+        for (int individualIdx=0; individualIdx<this.individualNumber; individualIdx++) {
+            double individualSizeFactor = this.inputSizeFactors[individualIdx];
+            int[] individualGeneReads = this.ipGenesReads[individualIdx];
+
+            for (int geneIdx=0; geneIdx<this.geneNumber; geneIdx++) {
+                genesBkgExp[geneIdx] += individualGeneReads[geneIdx] / individualSizeFactor;
+            }
+        }
+
+        for (int geneIdx=0; geneIdx<genesBkgExp.length; geneIdx++) {
+            genesBkgExp[geneIdx] = genesBkgExp[geneIdx] / this.individualNumber;
+        }
+
+        return genesBkgExp;
+        // only for simulation data test
+//        double[] res = new double[this.geneNumber];
 //        for (int geneIdx=0; geneIdx<genesBkgExp.length; geneIdx++) {
 //            res[geneIdx] = 500;
 //        }
@@ -77,36 +131,10 @@ public class BackgroundExpression {
      * @return standard deviation, shape 1 × geneNumber
      */
     public double[] geneExpressionStd() {
-        int individualNumber = this.ipGenesReads.length;
-        int geneNumber = this.ipGenesReads[0].length;
-//        if (individualNumber == 1)
-//            return new double[geneNumber];
-
-        // genes' background expression expectation, shape 1 × geneNumber
-//        double[] genesBkgExpMean = this.geneBackgroundExp();
-        // genes' background expression standard deviation, shape 1 × geneNumber
-//        double[] genesBkgExpStd = new double[this.ipGenesReads[0].length];
-
-//        double distance;
-//        for (int[] individualGeneIPReads: this.ipGenesReads) {
-//            for (int geneIdx=0; geneIdx<geneNumber; geneIdx++) {
-//                distance = individualGeneIPReads[geneIdx] - genesBkgExpMean[geneIdx];
-//                genesBkgExpStd[geneIdx] += Math.pow(distance, 2);
-//            }
-//        }
-
-//        for (int geneIdx=0; geneIdx<genesBkgExpStd.length; geneIdx++) {
-//            genesBkgExpStd[geneIdx] = Math.sqrt(genesBkgExpStd[geneIdx] / individualNumber);
-//        }
-//        genesBkgExpMean = null;
-
-//        return genesBkgExpStd;
-
-        // TODO:当作用于实际数据时改用上方的代码
-        double[] res = new double[this.ipGenesReads[0].length];
-        for (int geneIdx=0; geneIdx<this.ipGenesReads[0].length; geneIdx++) {
-            res[geneIdx] = 0.1;
-        }
-        return res;
+         double[] res = new double[this.geneNumber];
+         for (int geneIdx=0; geneIdx<this.geneNumber; geneIdx++) {
+             res[geneIdx] = 0.1;
+         }
+         return res;
     }
 }
