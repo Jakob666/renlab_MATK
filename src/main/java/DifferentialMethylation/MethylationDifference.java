@@ -3,11 +3,11 @@ package DifferentialMethylation;
 import LaplaceMetropolisEstimator.BestModelParams;
 import LaplaceMetropolisEstimator.CovarianceMatrix;
 import Quantification.BackgroundExpressionSampler;
+import Quantification.ExpansionEffectSampler;
 import Quantification.MethylationLevelSampler;
-import Quantification.NonSpecificEnrichmentSampler;
 import Quantification.OverdispersionSampler;
 import SeqDataModel.BackgroundExpression;
-import SeqDataModel.ReadsExpectation;
+import SeqDataModel.SizeFactor;
 import org.apache.commons.math3.linear.Array2DRowRealMatrix;
 import org.apache.commons.math3.linear.LUDecomposition;
 import org.apache.commons.math3.linear.RealMatrix;
@@ -16,6 +16,7 @@ import java.io.*;
 import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.concurrent.*;
 import java.util.stream.Collectors;
 
@@ -26,28 +27,23 @@ import java.util.stream.Collectors;
  */
 public class MethylationDifference {
     private int tretIndividualNumber, ctrlIndividualNumber, geneNumber, samplingTime, burnIn, threadNum;
-    private int[][] treatmentIPReads, treatmentINPUTReads, controlIPReads, controlINPUTReads,
-                    treatmentIPNonPeak, treatmentINPUTNonPeak, controlIPNonPeak, controlINPUTNonPeak;
+    private int[][] treatmentIPReads, treatmentINPUTReads, controlIPReads, controlINPUTReads;
     // distribution parameters
-    private double ipOverdispersionShape, ipOverdispersionScale, inputOverdispersionShape, inputOverdispersionScale,
-                   nonspecificEnrichParam1, nonspecificEnrichParam2, methylationLevelParam1, methylationLevelParam2, sameMethLevelModelPriorProba, diffMethLevelModelPriorProba;
-    private double[][] tretIPReadsExpectation, tretINPUTReadsExpectation, ctrlIPReadsExpectation, ctrlINPUTReadsExpectation,
-                       tretIPNonPeakExpectation, tretINPUTNonPeakExpectation, ctrlIPNonPeakExpectation, ctrlINPUTNonPeakExpectation;
+    private double ipOverdispersionShape, ipOverdispersionScale, inputOverdispersionShape, inputOverdispersionScale, expansionEffectParam1, expansionEffectParam2,
+                   methylationLevelParam1, methylationLevelParam2, quantifiedExpansionEffect;
     // MH sampling components, shape geneNumber × samplingTime
-    private double[] tretGeneBackgroundExpression, ctrlGeneBackgroundExpression, tretNonPeakExpressionMean, ctrlNonPeakExpressionMean;
+    private double[] tretGeneBackgroundExpression, ctrlGeneBackgroundExpression;
     // size factors, shape 1 × individual number
-    private double[] tretIPSizeFactors, tretINPUTSizeFactors, tretIPNonPeakSizeFactors, tretINPUTNonPeakSizeFactors,
-                     ctrlIPSizeFactors, ctrlINPUTSizeFactors, ctrlIPNonPeakSizeFactors, ctrlINPUTNonPeakSizeFactors;
-    private String outputFile = null;
+    private double[] tretIPSizeFactors, tretINPUTSizeFactors, ctrlIPSizeFactors, ctrlINPUTSizeFactors;
+    private String sameModelTmpDir, diffModelTmpDir, outputFile = null;
     private OverdispersionSampler tretIPOverdispersionSampler, tretINPUTOverdispersionSampler, ctrlIPOverdispersionSampler, ctrlINPUTOverdispersionSampler;
-    private NonSpecificEnrichmentSampler nonspecificEnrichSampler;
+    private ExpansionEffectSampler expansionEffectSampler;
     private MethylationLevelSampler tretMethylationLevelSampler, ctrlMethylationLevelSampler;
-    private BackgroundExpressionSampler[] treatmentBackgroundExpressionSamplers, controlBackgroundExpressionSamplers,
-                                          treatmentNonPeakExpressionSamplers, controlNonPeakExpressionSamplers;
-    private ModelSelector modelSelector;
+    private BackgroundExpressionSampler[] treatmentBackgroundExpressionSamplers, controlBackgroundExpressionSamplers;
+    private HashMap<String, double[]> sameMethModelQuantify, diffMethModelQuantify;
     private ConcurrentHashMap<Integer, Double> bayesFactors;
     private ConcurrentHashMap<Integer, double[]> quantifyResult;
-    private DecimalFormat df = new DecimalFormat("0.0000");
+    private DecimalFormat df = new DecimalFormat("0.000000");
 
     /**
      * Constructor
@@ -64,16 +60,14 @@ public class MethylationDifference {
      * @param samplingTime MH sampling time
      * @param burnIn MH burn-in time
      */
-    public MethylationDifference(int[][] treatmentIPReads, int[][] treatmentINPUTReads, int[][] treatmentIPNonPeak, int[][] treatmentINPUTNonPeak,
-                                 int[][] controlIPReads, int[][] controlINPUTReads, int[][] controlIPNonPeak, int[][] controlINPUTNonPeak,
+    public MethylationDifference(int[][] treatmentIPReads, int[][] treatmentINPUTReads,
+                                 int[][] controlIPReads, int[][] controlINPUTReads,
                                  double ipOverdispersionShape, double ipOverdispersionScale,
                                  double inputOverdispersionShape, double inputOverdispersionScale,
-                                 double nonspecificEnrichParam1, double nonspecificEnrichParam2,
+                                 double expansionEffectParam1, double expansionEffectParam2,
                                  double methylationLevelParam1, double methylationLevelParam2,
-                                 double sameMethLevelModelPriorProba, double diffMethLevelModelPriorProba,
                                  int samplingTime, int burnIn, String outputFile, int threadNumber) {
         // checking input parameters, same replications in IP and INPUT sample
-        assert Math.abs(sameMethLevelModelPriorProba+diffMethLevelModelPriorProba-1) < 0.00001;
         assert treatmentINPUTReads.length == treatmentIPReads.length && controlINPUTReads.length == controlIPReads.length;
         // treatment and control group contains same gene number in IP and INPUT
         assert treatmentINPUTReads[0].length == treatmentIPReads[0].length && controlINPUTReads[0].length == controlIPReads[0].length;
@@ -84,10 +78,6 @@ public class MethylationDifference {
         this.controlIPReads = controlIPReads;
         this.treatmentINPUTReads = treatmentINPUTReads;
         this.treatmentIPReads = treatmentIPReads;
-        this.controlIPNonPeak = controlIPNonPeak;
-        this.controlINPUTNonPeak = controlINPUTNonPeak;
-        this.treatmentIPNonPeak = treatmentIPNonPeak;
-        this.treatmentINPUTNonPeak = treatmentINPUTNonPeak;
         this.tretIndividualNumber = treatmentINPUTReads.length;
         this.ctrlIndividualNumber = controlINPUTReads.length;
         this.geneNumber = treatmentINPUTReads[0].length;
@@ -95,17 +85,16 @@ public class MethylationDifference {
         this.ipOverdispersionScale = ipOverdispersionScale;
         this.inputOverdispersionShape = inputOverdispersionShape;
         this.inputOverdispersionScale = inputOverdispersionScale;
-        this.nonspecificEnrichParam1 = nonspecificEnrichParam1;
-        this.nonspecificEnrichParam2 = nonspecificEnrichParam2;
+        this.expansionEffectParam1 = expansionEffectParam1;
+        this.expansionEffectParam2 = expansionEffectParam2;
         this.methylationLevelParam1 = methylationLevelParam1;
         this.methylationLevelParam2 = methylationLevelParam2;
         this.samplingTime = samplingTime;
         this.burnIn = burnIn;
         this.threadNum = threadNumber;
-        this.modelSelector = new ModelSelector();
-        this.sameMethLevelModelPriorProba = sameMethLevelModelPriorProba;
-        this.diffMethLevelModelPriorProba = diffMethLevelModelPriorProba;
         this.outputFile = outputFile;
+        this.sameModelTmpDir = new File(new File(this.outputFile).getParent(), "sameModel").getAbsolutePath();
+        this.diffModelTmpDir = new File(new File(this.outputFile).getParent(), "diffModel").getAbsolutePath();
     }
 
     /**
@@ -123,13 +112,13 @@ public class MethylationDifference {
      */
     private void initialize() {
         // initialize priority distribution
-        this.nonspecificEnrichSampler = new NonSpecificEnrichmentSampler(this.nonspecificEnrichParam1, this.nonspecificEnrichParam2);
         this.tretMethylationLevelSampler = new MethylationLevelSampler(this.methylationLevelParam1, this.methylationLevelParam2);
         this.ctrlMethylationLevelSampler = new MethylationLevelSampler(this.methylationLevelParam1, this.methylationLevelParam2);
         this.tretIPOverdispersionSampler = new OverdispersionSampler(this.ipOverdispersionShape, this.ipOverdispersionScale);
         this.tretINPUTOverdispersionSampler = new OverdispersionSampler(this.inputOverdispersionShape, this.inputOverdispersionScale);
         this.ctrlIPOverdispersionSampler = new OverdispersionSampler(this.ipOverdispersionShape, this.ipOverdispersionScale);
         this.ctrlINPUTOverdispersionSampler = new OverdispersionSampler(this.inputOverdispersionShape, this.inputOverdispersionScale);
+        this.expansionEffectSampler = new ExpansionEffectSampler(this.expansionEffectParam1, this.expansionEffectParam2);
 
         // background expression of treatment group, size factor of treatment group IP and INPUT data
         BackgroundExpression be = new BackgroundExpression(this.treatmentIPReads, this.treatmentINPUTReads);
@@ -148,22 +137,6 @@ public class MethylationDifference {
         this.tretIPSizeFactors = be.getGlobalIPSizeFactor();
         this.tretINPUTSizeFactors = be.getGlobalINPUTSizeFactor();
 
-        // non-peak region background expression of treatment group
-        be = new BackgroundExpression(this.treatmentIPNonPeak, this.treatmentINPUTNonPeak);
-        backgroundExpressionMean = be.geneBackgroundExp();
-        backgroundExpressionStd = be.geneExpressionStd();
-        this.tretNonPeakExpressionMean = new double[this.geneNumber];
-        this.treatmentNonPeakExpressionSamplers = new BackgroundExpressionSampler[this.geneNumber];
-        for (int geneIdx=0; geneIdx<this.geneNumber; geneIdx++) {
-            // shape and scale parameters of log-normal distribution
-            scale = Math.log(backgroundExpressionMean[geneIdx]);
-            shape = backgroundExpressionStd[geneIdx];
-            this.tretNonPeakExpressionMean[geneIdx] = backgroundExpressionMean[geneIdx];
-            this.treatmentNonPeakExpressionSamplers[geneIdx] = new BackgroundExpressionSampler(scale, shape);
-        }
-        this.tretIPNonPeakSizeFactors = be.getGlobalIPSizeFactor();
-        this.tretINPUTNonPeakSizeFactors = be.getGlobalINPUTSizeFactor();
-
         // background expression of control group, size factor of control group IP and INPUT data
         be = new BackgroundExpression(this.controlIPReads, this.controlINPUTReads);
         backgroundExpressionMean = be.geneBackgroundExp();
@@ -179,46 +152,8 @@ public class MethylationDifference {
         this.ctrlIPSizeFactors = be.getGlobalIPSizeFactor();
         this.ctrlINPUTSizeFactors = be.getGlobalINPUTSizeFactor();
 
-        // non-peak region background expression of control group
-        be = new BackgroundExpression(this.controlIPNonPeak, this.controlINPUTNonPeak);
-        backgroundExpressionMean = be.geneBackgroundExp();
-        backgroundExpressionStd = be.geneExpressionStd();
-        this.ctrlNonPeakExpressionMean = new double[this.geneNumber];
-        this.controlNonPeakExpressionSamplers = new BackgroundExpressionSampler[this.geneNumber];
-        for (int geneIdx=0; geneIdx<this.geneNumber; geneIdx++) {
-            // shape and scale parameters of log-normal distribution
-            scale = Math.log(backgroundExpressionMean[geneIdx]);
-            shape = backgroundExpressionStd[geneIdx];
-            this.ctrlNonPeakExpressionMean[geneIdx] = backgroundExpressionMean[geneIdx];
-            this.controlNonPeakExpressionSamplers[geneIdx] = new BackgroundExpressionSampler(scale, shape);
-        }
-        this.ctrlIPNonPeakSizeFactors = be.getGlobalIPSizeFactor();
-        this.ctrlINPUTNonPeakSizeFactors = be.getGlobalINPUTSizeFactor();
-
-        // treatment group methylation level, IP overdispersion, INPUT overdispersion of each gene, shape samplingTime × geneNumber
-        double[] initMethLevel = new double[this.geneNumber];
-        for (int i=0; i<this.geneNumber; i++) {
-            initMethLevel[i] = 0.1;
-        }
-
-        double[] initNonspecific = new double[this.geneNumber];
-        for (int i=0; i<this.geneNumber; i++) {
-            initNonspecific[i] = 0.1;
-        }
-        ReadsExpectation re = new ReadsExpectation(this.treatmentIPReads, this.treatmentINPUTReads, this.treatmentIPNonPeak, this.treatmentINPUTNonPeak, initMethLevel, initNonspecific);
-        this.tretIPReadsExpectation = re.getIPReadsExpectation();
-        this.tretINPUTReadsExpectation = re.getINPUTReadsExpectation();
-        this.tretIPNonPeakExpectation = re.getIPNonPeakExpectation();
-        this.tretINPUTNonPeakExpectation = re.getINPUTNonPeakExpectation();
-
-        re = new ReadsExpectation(this.controlIPReads, this.controlINPUTReads, this.controlIPNonPeak, this.controlINPUTNonPeak, initMethLevel, initNonspecific);
-        this.ctrlIPReadsExpectation = re.getIPReadsExpectation();
-        this.ctrlINPUTReadsExpectation = re.getINPUTReadsExpectation();
-        this.ctrlIPNonPeakExpectation = re.getIPNonPeakExpectation();
-        this.ctrlINPUTNonPeakExpectation = re.getINPUTNonPeakExpectation();
-        initMethLevel = null;
-        initNonspecific = null;
-        re = null;
+        // initialize samples' size factors
+        this.calcSampleSizeFactors();
     }
 
     /**
@@ -227,166 +162,150 @@ public class MethylationDifference {
     private void selectModel() {
         this.bayesFactors = new ConcurrentHashMap<>();
         this.quantifyResult = new ConcurrentHashMap<>();
-        ExecutorService threadPool = Executors.newFixedThreadPool(this.threadNum);
-        CountDownLatch countDown = new CountDownLatch(this.geneNumber);
-        CreateTask ct = (geneIdx -> () -> {
-            try {
-                 System.out.println(geneIdx+1 + "/" + this.geneNumber);
-                int[][] geneReadsCounts;
-                int[] tretIPReads, tretINPUTReads, ctrlIPReads, ctrlINPUTReads,
-                      tretIPNonPeak, tretINPUTNonPeak, ctrlIPNonPeak, ctrlINPUTNonPeak, selectResult;
-                double[][] geneReadsExpectations;
-                double[] tretIPExpectation, tretINPUTExpectation, ctrlIPExpectation, ctrlINPUTExpectation,
-                         tretIPNonPeakExpect, tretINPUTNonPeakExpect, ctrlIPNonPeakExpect, ctrlINPUTNonPeakExpect;
-                SameMethylationLevelModel sameMethylationLevelModel;
-                DiffMethylationLevelModel diffMethylationLevelModel;
 
-                BackgroundExpressionSampler treatmentBkgExpSampler, treatmentNonPeakExpSampler, controlBkgExpSampler, controlNonPeakExpSampler;
-                treatmentBkgExpSampler = this.treatmentBackgroundExpressionSamplers[geneIdx];
-                controlBkgExpSampler = this.controlBackgroundExpressionSamplers[geneIdx];
-                treatmentNonPeakExpSampler = this.treatmentNonPeakExpressionSamplers[geneIdx];
-                controlNonPeakExpSampler = this.controlNonPeakExpressionSamplers[geneIdx];
-                // data preparation
-                geneReadsCounts = this.getGeneReads(geneIdx);
-                tretIPReads = geneReadsCounts[0];
-                tretINPUTReads = geneReadsCounts[1];
-                ctrlIPReads = geneReadsCounts[2];
-                ctrlINPUTReads = geneReadsCounts[3];
-                tretIPNonPeak = geneReadsCounts[4];
-                tretINPUTNonPeak = geneReadsCounts[5];
-                ctrlIPNonPeak = geneReadsCounts[6];
-                ctrlINPUTNonPeak = geneReadsCounts[7];
-
-                geneReadsExpectations = this.getGeneExpectation(geneIdx);
-                tretIPExpectation = geneReadsExpectations[0];
-                tretINPUTExpectation = geneReadsExpectations[1];
-                ctrlIPExpectation = geneReadsExpectations[2];
-                ctrlINPUTExpectation = geneReadsExpectations[3];
-                tretIPNonPeakExpect = geneReadsExpectations[4];
-                tretINPUTNonPeakExpect = geneReadsExpectations[5];
-                ctrlIPNonPeakExpect = geneReadsExpectations[6];
-                ctrlINPUTNonPeakExpect = geneReadsExpectations[7];
-
-                // initialize two models for a gene
-                sameMethylationLevelModel = new SameMethylationLevelModel(this.tretMethylationLevelSampler, this.ctrlMethylationLevelSampler,
-                                                                          this.nonspecificEnrichSampler,
-                                                                          this.tretIPOverdispersionSampler, this.tretINPUTOverdispersionSampler,
-                                                                          this.ctrlIPOverdispersionSampler, this.ctrlINPUTOverdispersionSampler,
-                                                                          treatmentBkgExpSampler, treatmentNonPeakExpSampler, controlBkgExpSampler, controlNonPeakExpSampler);
-                diffMethylationLevelModel = new DiffMethylationLevelModel(this.tretMethylationLevelSampler, this.ctrlMethylationLevelSampler,
-                                                                          this.nonspecificEnrichSampler,
-                                                                          this.tretIPOverdispersionSampler, this.tretINPUTOverdispersionSampler,
-                                                                          this.ctrlIPOverdispersionSampler, this.ctrlINPUTOverdispersionSampler,
-                                                                          treatmentBkgExpSampler, treatmentNonPeakExpSampler, controlBkgExpSampler, controlNonPeakExpSampler);
-                // set gene reads count for each model
-                sameMethylationLevelModel.setTreatmentControlGeneReads(tretIPReads, tretINPUTReads, ctrlIPReads, ctrlINPUTReads,
-                                                                       tretIPNonPeak, tretINPUTNonPeak, ctrlIPNonPeak, ctrlINPUTNonPeak,
-                                                                       tretIPExpectation, tretINPUTExpectation, ctrlIPExpectation, ctrlINPUTExpectation,
-                                                                       tretIPNonPeakExpect, tretINPUTNonPeakExpect, ctrlIPNonPeakExpect, ctrlINPUTNonPeakExpect);
-                diffMethylationLevelModel.setTreatmentControlGeneReads(tretIPReads, tretINPUTReads, ctrlIPReads, ctrlINPUTReads,
-                                                                       tretIPNonPeak, tretINPUTNonPeak, ctrlIPNonPeak, ctrlINPUTNonPeak,
-                                                                       tretIPExpectation, tretINPUTExpectation, ctrlIPExpectation, ctrlINPUTExpectation,
-                                                                       tretIPNonPeakExpect, tretINPUTNonPeakExpect, ctrlIPNonPeakExpect, ctrlINPUTNonPeakExpect);
-
-                // set individual size factors
-                sameMethylationLevelModel.setSizeFactors(this.tretIPSizeFactors, this.tretINPUTSizeFactors, this.tretIPNonPeakSizeFactors, this.tretINPUTNonPeakSizeFactors,
-                                                         this.ctrlIPSizeFactors, this.ctrlINPUTSizeFactors, this.ctrlIPNonPeakSizeFactors, this.ctrlINPUTNonPeakSizeFactors);
-                diffMethylationLevelModel.setSizeFactors(this.tretIPSizeFactors, this.tretINPUTSizeFactors, this.tretIPNonPeakSizeFactors, this.tretINPUTNonPeakSizeFactors,
-                                                         this.ctrlIPSizeFactors, this.ctrlINPUTSizeFactors, this.ctrlIPNonPeakSizeFactors, this.ctrlINPUTNonPeakSizeFactors);
-                // first time sampling, set sampling list for each model
-                this.setModelSamplingList(sameMethylationLevelModel, diffMethylationLevelModel, geneIdx);
-                selectResult = this.sampling(sameMethylationLevelModel, diffMethylationLevelModel, false);
-
-                // estimate pseudo prior distribution parameters and start the second time sampling
-                // sameMethylationLevelModel.setModelParameterPseudoPrior();
-                // diffMethylationLevelModel.setModelParameterPseudoPrior();
-                // this.setModelSamplingList(sameMethylationLevelModel, diffMethylationLevelModel, geneIdx);
-                // selectResult = this.sampling(sameMethylationLevelModel, diffMethylationLevelModel, true);
-                // System.out.println(Arrays.stream(selectResult).skip(this.burnIn).sum());
-
-                // calculate same methylation level model posterior density and diff methylation level model posterior density
-                // double diffMethModelProba = this.differentiation(selectResult);
-                // double sameMethModelProba = 1 - diffMethModelProba;
-
-                // ModelSelection finalModel = (diffMethModelProba-0.5<0.00001)? sameMethylationLevelModel: diffMethylationLevelModel;
-                // double[] finalModelQuantify = this.quantify(finalModel);
-                double[] model0Quantify = this.quantify(sameMethylationLevelModel);
-                double[] model1Quantify = this.quantify(diffMethylationLevelModel);
-
-                // this.quantifyResult.put(geneIdx, finalModelQuantify);
-                // calculate Bayes factor
-                // double bayesFactor = this.calcLogBayesFactorLaplaceApproximation(model0Quantify, model1Quantify, sameMethylationLevelModel, diffMethylationLevelModel, geneIdx);
-                double bayesFactor = this.calcBayesFactorLaplaceMetropolis(sameMethylationLevelModel, diffMethylationLevelModel);
-                this.bayesFactors.put(geneIdx, bayesFactor);
-                if (bayesFactor - 3 > 0.00001)
-                    this.quantifyResult.put(geneIdx, model1Quantify);
-                else
-                    this.quantifyResult.put(geneIdx, model0Quantify);
-
-                // help GC
-                sameMethylationLevelModel.helpGC();
-                diffMethylationLevelModel.helpGC();
-            } catch (Exception e) {
-                e.printStackTrace();
-            } finally {
-                countDown.countDown();
-            }
-        });
-        for (int geneIdx=0; geneIdx<this.geneNumber; geneIdx ++) {
-            Runnable task = ct.getTask(geneIdx);
-            threadPool.submit(task);
-        }
-
+        SameMethylationLevelModel sameMethylationLevelModel;
+        DiffMethylationLevelModel quantifyExpansionEffectModel, diffMethylationLevelModel;
+        ExecutorService executorService = Executors.newFixedThreadPool(this.threadNum);
         try {
-            countDown.await();
-            threadPool.shutdown();
-            if (!threadPool.awaitTermination(1000, TimeUnit.MILLISECONDS))
-                threadPool.shutdownNow();
-        } catch (InterruptedException ie) {
-            ie.printStackTrace();
+            quantifyExpansionEffectModel = (DiffMethylationLevelModel) this.initialModel(false);
+            // quantify expansion effect of treatment and control IP data
+            this.quantifyExpansionEffect(quantifyExpansionEffectModel);
+
+            sameMethylationLevelModel = (SameMethylationLevelModel) this.initialModel(true);
+            sameMethylationLevelModel.setQuantifiedExpansionEffect(this.quantifiedExpansionEffect);
+            diffMethylationLevelModel = (DiffMethylationLevelModel) this.initialModel(false);
+            diffMethylationLevelModel.setQuantifiedExpansionEffect(this.quantifiedExpansionEffect);
+            // quantify treatment and control group methylation level with specified expansion effect
+            this.differentiateSampling(sameMethylationLevelModel, diffMethylationLevelModel);
+            this.sameMethModelQuantify = this.quantify(sameMethylationLevelModel);
+            this.diffMethModelQuantify = this.quantify(diffMethylationLevelModel);
+
+            CountDownLatch countDownLatch = new CountDownLatch(this.geneNumber);
+
+            // calculate Bayes factors for each peak
+            BayesFactorTask taskMaker = (idx -> () -> {
+                try {
+                    double bayesFactor = this.calcBayesFactorLaplaceMetropolis(sameMethylationLevelModel, diffMethylationLevelModel, idx);
+                    double tretMeth, ctrlMeth, tretExp, ctrlExp, tretIPOverdispersion, tretINPUTOverdispersion, ctrlIPOverdispersion, ctrlINPUTOverdispersion;
+                    ;
+                    if (bayesFactor - 3 > 0.00001) {
+                        tretMeth = this.diffMethModelQuantify.get("tretMeth")[idx];
+                        ctrlMeth = this.diffMethModelQuantify.get("ctrlMeth")[idx];
+                        tretExp = this.diffMethModelQuantify.get("tretExp")[idx];
+                        ctrlExp = this.diffMethModelQuantify.get("ctrlExp")[idx];
+                        tretIPOverdispersion = this.diffMethModelQuantify.get("overdispersions")[0];
+                        ctrlIPOverdispersion = this.diffMethModelQuantify.get("overdispersions")[1];
+                        tretINPUTOverdispersion = this.diffMethModelQuantify.get("overdispersions")[2];
+                        ctrlINPUTOverdispersion = this.diffMethModelQuantify.get("overdispersions")[3];
+                    } else {
+                        tretMeth = this.sameMethModelQuantify.get("tretMeth")[idx];
+                        ctrlMeth = this.sameMethModelQuantify.get("ctrlMeth")[idx];
+                        tretExp = this.sameMethModelQuantify.get("tretExp")[idx];
+                        ctrlExp = this.sameMethModelQuantify.get("ctrlExp")[idx];
+                        tretIPOverdispersion = this.sameMethModelQuantify.get("overdispersions")[0];
+                        ctrlIPOverdispersion = this.sameMethModelQuantify.get("overdispersions")[1];
+                        tretINPUTOverdispersion = this.sameMethModelQuantify.get("overdispersions")[2];
+                        ctrlINPUTOverdispersion = this.sameMethModelQuantify.get("overdispersions")[3];
+                    }
+                    this.bayesFactors.put(idx, bayesFactor);
+                    this.quantifyResult.put(idx, new double[] {tretMeth, ctrlMeth, tretExp, ctrlExp, tretIPOverdispersion, tretINPUTOverdispersion, ctrlIPOverdispersion, ctrlINPUTOverdispersion});
+                } catch (Exception e) {
+                    e.printStackTrace();
+                } finally {
+                    countDownLatch.countDown();
+                }
+            });
+
+            Runnable runnable;
+            for (int peakIdx=0; peakIdx<this.geneNumber; peakIdx++) {
+                runnable = taskMaker.createTask(peakIdx);
+                executorService.submit(runnable);
+            }
+            countDownLatch.await();
+        } catch (Exception e) {
+            e.printStackTrace();
         } finally {
-            threadPool.shutdownNow();
+            executorService.shutdown();
         }
+    }
+
+    /**
+     * initialize same methylation or diff methylation model
+     * @param sameMeth true, if same model; otherwise false
+     * @return model
+     */
+    private ModelSelection initialModel(boolean sameMeth) {
+        ModelSelection model;
+        if (sameMeth)
+            model = new SameMethylationLevelModel(this.tretMethylationLevelSampler, this.ctrlMethylationLevelSampler,
+                                                  this.tretIPOverdispersionSampler, this.tretINPUTOverdispersionSampler,
+                                                  this.ctrlIPOverdispersionSampler, this.ctrlINPUTOverdispersionSampler,
+                                                  this.treatmentBackgroundExpressionSamplers, this.controlBackgroundExpressionSamplers,
+                                                  this.expansionEffectSampler, this.samplingTime, this.burnIn, this.threadNum, this.sameModelTmpDir);
+        else
+            model = new DiffMethylationLevelModel(this.tretMethylationLevelSampler, this.ctrlMethylationLevelSampler,
+                                                  this.tretIPOverdispersionSampler, this.tretINPUTOverdispersionSampler,
+                                                  this.ctrlIPOverdispersionSampler, this.ctrlINPUTOverdispersionSampler,
+                                                  this.treatmentBackgroundExpressionSamplers, this.controlBackgroundExpressionSamplers,
+                                                  this.expansionEffectSampler, this.samplingTime, this.burnIn, this.threadNum, this.diffModelTmpDir);
+        // initial model samples' size factors
+        model.setSizeFactors(this.tretIPSizeFactors, this.tretINPUTSizeFactors, this.ctrlIPSizeFactors, this.ctrlINPUTSizeFactors);
+        // initial model samples' observed reads counts
+        model.setTreatmentControlGeneReads(this.treatmentIPReads, this.treatmentINPUTReads, this.controlIPReads, this.controlINPUTReads);
+        // set sampling list
+        double[] tretIPOverdispersion = new double[this.samplingTime], ctrlIPOverdispersion = new double[this.samplingTime],
+                 tretINPUTOverdispersion = new double[this.samplingTime], ctrlINPUTOverdispersion = new double[this.samplingTime],
+                 expansionEffect = new double[this.samplingTime], tretMethLevel = new double[this.geneNumber], ctrlMethLevel = new double[this.geneNumber];
+        tretIPOverdispersion[0] = 0.1;
+        ctrlIPOverdispersion[0] = 0.1;
+        tretINPUTOverdispersion[0] = 0.1;
+        ctrlINPUTOverdispersion[0] = 0.1;
+        expansionEffect[0] = 2;
+        tretMethLevel[0] = 0.1;
+        ctrlMethLevel[0] = 0.1;
+
+        double[] tretBkgExp = new double[this.geneNumber];
+        System.arraycopy(this.tretGeneBackgroundExpression, 0, tretBkgExp, 0, this.geneNumber);
+        double[] ctrlBkgExp = new double[this.geneNumber];
+        System.arraycopy(this.ctrlGeneBackgroundExpression, 0, ctrlBkgExp, 0, this.geneNumber);
+        model.setSamplingList(tretIPOverdispersion, tretINPUTOverdispersion, ctrlIPOverdispersion, ctrlINPUTOverdispersion,
+                              expansionEffect, tretBkgExp, ctrlBkgExp, tretMethLevel, ctrlMethLevel);
+
+        return model;
+    }
+
+    /**
+     * quantify expansion effect of treatment and control data
+     * @param diffMethylationLevelModel different methylation level model
+     */
+    private void quantifyExpansionEffect(DiffMethylationLevelModel diffMethylationLevelModel) {
+        double diffMethFullConditionProba;
+        diffMethFullConditionProba = diffMethylationLevelModel.paramsLogFullConditionalProbability(0);
+        for (int t=1; t<this.samplingTime; t++) {
+            diffMethFullConditionProba = diffMethylationLevelModel.iterate(t, diffMethFullConditionProba);
+        }
+        double[] expansionEffect = diffMethylationLevelModel.parameters.getExpansionEffect();
+        this.quantifiedExpansionEffect = diffMethylationLevelModel.calcMedian(expansionEffect);
     }
 
     /**
      * sampling process
      */
-    private int[] sampling(SameMethylationLevelModel sameMethylationLevelModel, DiffMethylationLevelModel diffMethylationLevelModel, boolean usePseudoPrior) {
-        int modelType;
-        double sameMethModelLogProba, diffMethModelLogProba,
-               sameMethFullConditionProba, diffMethFullConditionProba;
-        // model type initialization, 0 denotes as same methylation model, 1 denotes as different methylation model
-        int[] modelSelectionResult = new int[this.samplingTime];
-        modelSelectionResult[0] = 0;
-
+    private void differentiateSampling(SameMethylationLevelModel sameMethylationLevelModel, DiffMethylationLevelModel diffMethylationLevelModel) {
+        double sameMethFullConditionProba, diffMethFullConditionProba;
+        // iterate with specific expansion effect, record model initial value
+        sameMethylationLevelModel.renewRecordFiles();
+        diffMethylationLevelModel.renewRecordFiles();
+        // calculate model initial posterior probability, log-likelihood + log-prior
+        sameMethFullConditionProba = sameMethylationLevelModel.paramsLogFullConditionalProbability(0);
+        diffMethFullConditionProba = diffMethylationLevelModel.paramsLogFullConditionalProbability(0);
         for (int t=1; t<this.samplingTime; t++) {
-            // log-likelihood + log-prior
-            sameMethFullConditionProba = sameMethylationLevelModel.paramsLogFullConditionalProbability();
-            diffMethFullConditionProba = diffMethylationLevelModel.paramsLogFullConditionalProbability();
-
-            modelType = modelSelectionResult[t-1];
-            sameMethFullConditionProba = sameMethylationLevelModel.iterate(t, sameMethFullConditionProba,true, usePseudoPrior);
-            diffMethFullConditionProba = diffMethylationLevelModel.iterate(t, diffMethFullConditionProba,true, usePseudoPrior);
-
-            // model full-conditional posterior probability = log-likelihood + log-prior + log-pseudo prior + log-model prior
-            if (modelType == 0) { // current model is same methylation model
-                if (t >= this.burnIn)
-                    sameMethylationLevelModel.recordCurrentIterationParams();
-                sameMethModelLogProba = sameMethFullConditionProba + diffMethylationLevelModel.paramsPseudoDistributionProbability(usePseudoPrior) + Math.log(this.sameMethLevelModelPriorProba);
-                diffMethFullConditionProba = diffMethylationLevelModel.paramsLogFullConditionalProbability();
-                diffMethModelLogProba = diffMethFullConditionProba + sameMethylationLevelModel.paramsPseudoDistributionProbability(usePseudoPrior) + Math.log(this.diffMethLevelModelPriorProba);
-            } else {    // current model is different methylation model
-                if (t >= this.burnIn)
-                    diffMethylationLevelModel.recordCurrentIterationParams();
-                sameMethFullConditionProba = sameMethylationLevelModel.paramsLogFullConditionalProbability();
-                sameMethModelLogProba = sameMethFullConditionProba + diffMethylationLevelModel.paramsPseudoDistributionProbability(usePseudoPrior) + Math.log(this.sameMethLevelModelPriorProba);
-                diffMethModelLogProba = diffMethFullConditionProba + sameMethylationLevelModel.paramsPseudoDistributionProbability(usePseudoPrior) + Math.log(this.diffMethLevelModelPriorProba);
-            }
-            modelSelectionResult[t] = this.modelSelector.getSamplingRes(sameMethModelLogProba, diffMethModelLogProba);
+            sameMethFullConditionProba = sameMethylationLevelModel.iterate(t, sameMethFullConditionProba);
+            diffMethFullConditionProba = diffMethylationLevelModel.iterate(t, diffMethFullConditionProba);
+            // record sampling result of this iteration
+            sameMethylationLevelModel.renewRecordFiles();
+            diffMethylationLevelModel.renewRecordFiles();
         }
-
-        return modelSelectionResult;
     }
 
     /**
@@ -396,52 +315,23 @@ public class MethylationDifference {
      * @return double[] {treatment methylation, control methylation, treatment IP overdispersion, treatment INPUT overdispersion,
      *                   control IP overdispersion, control INPUT overdispersion, treatment background expression, control background expression}
      */
-    private double[] quantify(ModelSelection model) {
-        int remainTime = this.samplingTime - this.burnIn;
-        double[] treatmentMethRemainValue = Arrays.stream(model.treatmentMethylationLevel).skip(this.burnIn).sorted().toArray();
-        double[] controlMethRemainValue = Arrays.stream(model.controlMethylationLevel).skip(this.burnIn).sorted().toArray();
-        double[] nonspecificEnrichRemainValue = Arrays.stream(model.nonspecificEnrichment).skip(this.burnIn).sorted().toArray();
-        double[] treatmentIPOverdispersionRemainValue = Arrays.stream(model.treatmentIPOverdispersion).skip(this.burnIn).sorted().toArray();
-        double[] treatmentINPUTOverdispersionRemainValue = Arrays.stream(model.treatmentINPUTOverdispersion).skip(this.burnIn).sorted().toArray();
-        double[] controlIPOverdispersionRemainValue = Arrays.stream(model.controlIPOverdispersion).skip(this.burnIn).sorted().toArray();
-        double[] controlINPUTOverdispersionRemainValue = Arrays.stream(model.controlINPUTOverdispersion).skip(this.burnIn).sorted().toArray();
-//        double[] treatmentBkgExpRemainValue = Arrays.stream(model.treatmentBkgExp).skip(this.burnIn).sorted().toArray();
-//        double[] controlBkgExpRemainValue = Arrays.stream(model.controlBkgExp).skip(this.burnIn).sorted().toArray();
-//        double[] treatmentNonPeakExpRemainValue = Arrays.stream(model.treatmentNonPeakBkgExp).skip(this.burnIn).sorted().toArray();
-//        double[] controlNonPeakExpRemainValue = Arrays.stream(model.controlNonPeakBkgExp).skip(this.burnIn).sorted().toArray();
+    private HashMap<String, double[]> quantify(ModelSelection model) {
+        model.quantify();
+        double[] overdispersions = model.parameters.getOverdispersions();
+        // shape 1 × peakNumber
+        double[] tretExpressions = model.parameters.getQuantifiedTretExpression();
+        double[] ctrlExpressions = model.parameters.getQuantifiedCtrlExpression();
+        double[] tretMethylations = model.parameters.getQuantifiedTretMethLevel();
+        double[] ctrlMethylations = model.parameters.getQuantifiedCtrlMethLevel();
 
-        int medianIdx = remainTime / 2;
-        double tretMeth, ctrlMeth, nonspecificEnrich, tretIPOverdispersion, tretINPUTOverdispersion, ctrlIPOverdispersion,
-               ctrlINPUTOverdispersion; // , tretBkgExp, ctrlBkgExp, tretNonPeakExp, ctrlNonPeakExp
-        if (remainTime%2==0) {
-            tretMeth = (treatmentMethRemainValue[medianIdx] + treatmentMethRemainValue[medianIdx+1]) / 2;
-            ctrlMeth = (controlMethRemainValue[medianIdx] + controlMethRemainValue[medianIdx+1]) / 2;
-            nonspecificEnrich = (nonspecificEnrichRemainValue[medianIdx] + nonspecificEnrichRemainValue[medianIdx+1]) / 2;
-            tretIPOverdispersion = (treatmentIPOverdispersionRemainValue[medianIdx] + treatmentIPOverdispersionRemainValue[medianIdx+1]) / 2;
-            tretINPUTOverdispersion = (treatmentINPUTOverdispersionRemainValue[medianIdx] + treatmentINPUTOverdispersionRemainValue[medianIdx+1]) / 2;
-            ctrlIPOverdispersion = (controlIPOverdispersionRemainValue[medianIdx] + controlIPOverdispersionRemainValue[medianIdx+1]) / 2;
-            ctrlINPUTOverdispersion = (controlINPUTOverdispersionRemainValue[medianIdx] + controlINPUTOverdispersionRemainValue[medianIdx+1]) / 2;
-//            tretBkgExp = (treatmentBkgExpRemainValue[medianIdx] + treatmentBkgExpRemainValue[medianIdx+1]) / 2;
-//            ctrlBkgExp = (controlBkgExpRemainValue[medianIdx] + controlBkgExpRemainValue[medianIdx+1]) / 2;
-//            tretNonPeakExp = (treatmentNonPeakExpRemainValue[medianIdx] + treatmentNonPeakExpRemainValue[medianIdx+1]) / 2;
-//            ctrlNonPeakExp = (controlNonPeakExpRemainValue[medianIdx] + controlNonPeakExpRemainValue[medianIdx+1]) / 2;
-        } else {
-            tretMeth = treatmentMethRemainValue[medianIdx];
-            ctrlMeth = controlMethRemainValue[medianIdx];
-            nonspecificEnrich = nonspecificEnrichRemainValue[medianIdx];
-            tretIPOverdispersion = treatmentIPOverdispersionRemainValue[medianIdx];
-            tretINPUTOverdispersion = treatmentINPUTOverdispersionRemainValue[medianIdx];
-            ctrlIPOverdispersion = controlIPOverdispersionRemainValue[medianIdx];
-            ctrlINPUTOverdispersion = controlINPUTOverdispersionRemainValue[medianIdx];
-//            tretBkgExp = treatmentBkgExpRemainValue[medianIdx];
-//            ctrlBkgExp = controlBkgExpRemainValue[medianIdx];
-//            tretNonPeakExp = treatmentNonPeakExpRemainValue[medianIdx];
-//            ctrlNonPeakExp = controlNonPeakExpRemainValue[medianIdx];
-        }
+        HashMap<String, double[]> quantifyResult = new HashMap<>();
+        quantifyResult.put("overdispersions", overdispersions);
+        quantifyResult.put("tretExp", tretExpressions);
+        quantifyResult.put("ctrlExp", ctrlExpressions);
+        quantifyResult.put("tretMeth", tretMethylations);
+        quantifyResult.put("ctrlMeth", ctrlMethylations);
 
-        return new double[] {tretMeth, ctrlMeth, nonspecificEnrich,
-                             tretIPOverdispersion, tretINPUTOverdispersion, ctrlIPOverdispersion, ctrlINPUTOverdispersion};
-                            // , tretBkgExp, ctrlBkgExp, tretNonPeakExp, ctrlNonPeakExp
+        return quantifyResult;
     }
 
     /**
@@ -449,6 +339,7 @@ public class MethylationDifference {
      * probability of variant methylation level between treatment and control
      * @return probability
      */
+    @Deprecated
     private double differentiation(int[] modelSelectionResult) {
         int remainTime = this.samplingTime - this.burnIn;
         return  (double) (Arrays.stream(modelSelectionResult).skip(this.burnIn).sum()) / remainTime;
@@ -463,87 +354,88 @@ public class MethylationDifference {
      *
      *  2*log(BF) is used as a evidential measure to compare the support provided by the observe data D for Model0 relative to Model1.
      */
+    @Deprecated
     private double calcLogBayesFactorLaplaceApproximation(double[] sameMethModelQuantify, double[] diffMethModelQuantify,
                                                           ModelSelection sameMethModel, ModelSelection diffMethModel, int geneIdx) {
-        int[] tretIPReads = sameMethModel.treatmentIPReads;
-        int[] tretINPUTReads = sameMethModel.treatmentINPUTReads;
-        int[] ctrlIPReads = sameMethModel.controlIPReads;
-        int[] ctrlINPUTReads = sameMethModel.controlINPUTReads;
-        int[] tretIPNonPeak = sameMethModel.treatmentIPNonPeakReads;
-        int[] tretINPUTNonPeak = sameMethModel.treatmentINPUTNonPeakReads;
-        int[] ctrlIPNonPeak = sameMethModel.controlIPNonPeakReads;
-        int[] ctrlINPUTNonPeak = sameMethModel.controlINPUTNonPeakReads;
-        double tretPeakBkgExp = this.tretGeneBackgroundExpression[geneIdx];
-        double tretNonPeakBkgExp= this.tretNonPeakExpressionMean[geneIdx];
-        double ctrlPeakBkgExp = this.ctrlGeneBackgroundExpression[geneIdx];
-        double ctrlNonPeakBkgExp= this.ctrlNonPeakExpressionMean[geneIdx];
-        double model0LogLikelihood = this.modelLogLikelihood(sameMethModelQuantify, sameMethModel);
-        double model1LofLikelihood = this.modelLogLikelihood(diffMethModelQuantify, diffMethModel);
-        double model0LogPrior = this.modelLogPrior(sameMethModelQuantify, sameMethModel);
-        double model1LogPrior = this.modelLogPrior(diffMethModelQuantify, diffMethModel);
-        double[] tretSizeFactor = this.sampleSizeFactors(this.treatmentIPReads, this.treatmentINPUTReads);
-        double[] ctrlSizeFactor = this.sampleSizeFactors(this.controlIPReads, this.controlINPUTReads);
-        BayesFactorCalculation bfc = new BayesFactorCalculation(model0LogLikelihood, model1LofLikelihood, model0LogPrior, model1LogPrior,
-                                                                sameMethModelQuantify, diffMethModelQuantify, tretPeakBkgExp, ctrlPeakBkgExp, tretNonPeakBkgExp, ctrlNonPeakBkgExp,
-                                                                this.ipOverdispersionShape, this.methylationLevelParam1, this.methylationLevelParam2);
-        bfc.setReads(tretIPReads, tretINPUTReads, ctrlIPReads, ctrlINPUTReads,
-                     tretIPNonPeak, tretINPUTNonPeak, ctrlIPNonPeak, ctrlINPUTNonPeak);
-        bfc.setSizeFactors(tretSizeFactor, ctrlSizeFactor);
-        return bfc.calcBayesFactor();
+//        int[] tretIPReads = sameMethModel.treatmentIPReads;
+//        int[] tretINPUTReads = sameMethModel.treatmentINPUTReads;
+//        int[] ctrlIPReads = sameMethModel.controlIPReads;
+//        int[] ctrlINPUTReads = sameMethModel.controlINPUTReads;
+//        int[] tretIPNonPeak = sameMethModel.treatmentIPNonPeakReads;
+//        int[] tretINPUTNonPeak = sameMethModel.treatmentINPUTNonPeakReads;
+//        int[] ctrlIPNonPeak = sameMethModel.controlIPNonPeakReads;
+//        int[] ctrlINPUTNonPeak = sameMethModel.controlINPUTNonPeakReads;
+//        double tretPeakBkgExp = this.tretGeneBackgroundExpression[geneIdx];
+//        double tretNonPeakBkgExp= this.tretNonPeakExpressionMean[geneIdx];
+//        double ctrlPeakBkgExp = this.ctrlGeneBackgroundExpression[geneIdx];
+//        double ctrlNonPeakBkgExp= this.ctrlNonPeakExpressionMean[geneIdx];
+//        double model0LogLikelihood = this.modelLogLikelihood(sameMethModelQuantify, sameMethModel);
+//        double model1LofLikelihood = this.modelLogLikelihood(diffMethModelQuantify, diffMethModel);
+//        double model0LogPrior = this.modelLogPrior(sameMethModelQuantify, sameMethModel);
+//        double model1LogPrior = this.modelLogPrior(diffMethModelQuantify, diffMethModel);
+//        double[] tretSizeFactor = this.sampleSizeFactors(this.treatmentIPReads, this.treatmentINPUTReads);
+//        double[] ctrlSizeFactor = this.sampleSizeFactors(this.controlIPReads, this.controlINPUTReads);
+//        BayesFactorCalculation bfc = new BayesFactorCalculation(model0LogLikelihood, model1LofLikelihood, model0LogPrior, model1LogPrior,
+//                                                                sameMethModelQuantify, diffMethModelQuantify, tretPeakBkgExp, ctrlPeakBkgExp, tretNonPeakBkgExp, ctrlNonPeakBkgExp,
+//                                                                this.ipOverdispersionShape, this.methylationLevelParam1, this.methylationLevelParam2);
+//        bfc.setReads(tretIPReads, tretINPUTReads, ctrlIPReads, ctrlINPUTReads,
+//                     tretIPNonPeak, tretINPUTNonPeak, ctrlIPNonPeak, ctrlINPUTNonPeak);
+//        bfc.setSizeFactors(tretSizeFactor, ctrlSizeFactor);
+//        return bfc.calcBayesFactor();
+        return 0;
     }
 
     /**
      * calculate Bayes factor with Laplace-Metropolis estimator
+     * @param sameMethModel same methylation level model
+     * @param diffMethModel diff methylation level model
+     * @param peakIdx peakIdx
      * @return Bayes factor
      */
-    private double calcBayesFactorLaplaceMetropolis(ModelSelection sameMethModel, ModelSelection diffMethModel) {
-        double[] treatmentIPOverdispersion, treatmentINPUTOverdispersion, controlIPOverdispersion, controlINPUTOverdispersion,
-                 treatmentMethylationLevel, controlMethylationLevel, nonspecificEnrichment;
+    private double calcBayesFactorLaplaceMetropolis(ModelSelection sameMethModel, ModelSelection diffMethModel, int peakIdx) throws IOException {
+        // shape 1 × samplingTime, get from model
+        double[] treatmentIPOverdispersion, treatmentINPUTOverdispersion, controlIPOverdispersion, controlINPUTOverdispersion;
+        // shape 1 × samplingTime, get from record file
+        double[][] recordData;
+        double[] treatmentMethylationLevel, controlMethylationLevel, treatmentExpressions, controlExpressions;
+        File sameModelTargetFile = new File(this.sameModelTmpDir, peakIdx+".txt"),
+             diffModelTargetFile = new File(this.diffModelTmpDir, peakIdx+".txt");
 
-        treatmentIPOverdispersion = sameMethModel.treatmentIPOverdispersion;
-        treatmentINPUTOverdispersion = sameMethModel.treatmentINPUTOverdispersion;
-        controlIPOverdispersion = sameMethModel.controlIPOverdispersion;
-        controlINPUTOverdispersion = sameMethModel.controlINPUTOverdispersion;
-        treatmentMethylationLevel = sameMethModel.treatmentMethylationLevel;
-        nonspecificEnrichment = sameMethModel.nonspecificEnrichment;
-        CovarianceMatrix model0Covariance = new CovarianceMatrix(treatmentIPOverdispersion, treatmentINPUTOverdispersion,
-                                                                 controlIPOverdispersion, controlINPUTOverdispersion,
-                                                                 treatmentMethylationLevel, null,
-                                                                 nonspecificEnrichment, this.burnIn);
-        double[][] model0CovarianceMatrix = model0Covariance.getCovarianceMatrix();
-        RealMatrix model0CovMatrix = new Array2DRowRealMatrix(model0CovarianceMatrix);
-        double model0Determinate = new LUDecomposition(model0CovMatrix).getDeterminant();
-        BestModelParams model0BestParams = new BestModelParams(treatmentIPOverdispersion, treatmentINPUTOverdispersion,
-                                                               controlIPOverdispersion, controlINPUTOverdispersion,
-                                                               treatmentMethylationLevel, null,
-                                                               nonspecificEnrichment, sameMethModel, this.burnIn);
-        model0BestParams.setSizeFactors(this.tretIPSizeFactors, this.tretINPUTSizeFactors, this.tretIPNonPeakSizeFactors, this.tretINPUTNonPeakSizeFactors,
-                                        this.ctrlIPSizeFactors, this.ctrlINPUTSizeFactors, this.ctrlIPNonPeakSizeFactors, this.ctrlINPUTNonPeakSizeFactors);
-        double model0MaximumPosterior = model0BestParams.getMaximumPosterior();
+        // same methylation level model
+        treatmentIPOverdispersion = sameMethModel.parameters.getTretIPOverdispersion();
+        treatmentINPUTOverdispersion = sameMethModel.parameters.getTretINPUTOverdispersion();
+        controlIPOverdispersion = sameMethModel.parameters.getCtrlIPOverdispersion();
+        controlINPUTOverdispersion = sameMethModel.parameters.getCtrlINPUTOverdispersion();
+        recordData = this.loadRecordData(sameModelTargetFile);
+        treatmentMethylationLevel = recordData[0];
+        controlMethylationLevel = recordData[1];
+        treatmentExpressions = recordData[2];
+        controlExpressions = recordData[3];
 
-        treatmentIPOverdispersion = diffMethModel.treatmentIPOverdispersion;
-        treatmentINPUTOverdispersion = diffMethModel.treatmentINPUTOverdispersion;
-        controlIPOverdispersion = diffMethModel.controlIPOverdispersion;
-        controlINPUTOverdispersion = diffMethModel.controlINPUTOverdispersion;
-        treatmentMethylationLevel = diffMethModel.treatmentMethylationLevel;
-        controlMethylationLevel = diffMethModel.controlMethylationLevel;
-        nonspecificEnrichment = diffMethModel.nonspecificEnrichment;
-        CovarianceMatrix model1Covariance = new CovarianceMatrix(treatmentIPOverdispersion, treatmentINPUTOverdispersion,
-                                                                 controlIPOverdispersion, controlINPUTOverdispersion,
-                                                                 treatmentMethylationLevel, controlMethylationLevel,
-                                                                 nonspecificEnrichment, this.burnIn);
-        double[][] model1CovarianceMatrix = model1Covariance.getCovarianceMatrix();
-        RealMatrix model1CovMatrix = new Array2DRowRealMatrix(model1CovarianceMatrix);
-        double model1Determinate = new LUDecomposition(model1CovMatrix).getDeterminant();
-        BestModelParams model1BestParams = new BestModelParams(treatmentIPOverdispersion, treatmentINPUTOverdispersion,
-                                                               controlIPOverdispersion, controlINPUTOverdispersion,
-                                                               treatmentMethylationLevel, controlMethylationLevel,
-                                                               nonspecificEnrichment, sameMethModel, this.burnIn);
-        model1BestParams.setSizeFactors(this.tretIPSizeFactors, this.tretINPUTSizeFactors, this.tretIPNonPeakSizeFactors, this.tretINPUTNonPeakSizeFactors,
-                                        this.ctrlIPSizeFactors, this.ctrlINPUTSizeFactors, this.ctrlIPNonPeakSizeFactors, this.ctrlINPUTNonPeakSizeFactors);
-        double model1MaximumPosterior = model1BestParams.getMaximumPosterior();
+        double model0Determinate = this.calcCovarianceMatrixDeterminate(treatmentIPOverdispersion, treatmentINPUTOverdispersion, controlIPOverdispersion, controlINPUTOverdispersion,
+                                                                        treatmentMethylationLevel, null, treatmentExpressions, controlExpressions);
 
-        int model0ParamNum = 6, model1ParamNum = 7;
+        double model0MaximumPosterior = this.calcPeakMaximumPosterior(treatmentIPOverdispersion, treatmentINPUTOverdispersion, controlIPOverdispersion, controlINPUTOverdispersion,
+                                                                      treatmentMethylationLevel, null, treatmentExpressions, controlExpressions, sameMethModel, peakIdx);
+
+        // diff methylation level model
+        treatmentIPOverdispersion = diffMethModel.parameters.getTretIPOverdispersion();
+        treatmentINPUTOverdispersion = diffMethModel.parameters.getTretINPUTOverdispersion();
+        controlIPOverdispersion = diffMethModel.parameters.getCtrlIPOverdispersion();
+        controlINPUTOverdispersion = diffMethModel.parameters.getCtrlINPUTOverdispersion();
+        recordData = this.loadRecordData(diffModelTargetFile);
+        treatmentMethylationLevel = recordData[0];
+        controlMethylationLevel = recordData[1];
+        treatmentExpressions = recordData[2];
+        controlExpressions = recordData[3];
+
+        double model1Determinate = this.calcCovarianceMatrixDeterminate(treatmentIPOverdispersion, treatmentINPUTOverdispersion, controlIPOverdispersion, controlINPUTOverdispersion,
+                                                                        treatmentMethylationLevel, controlMethylationLevel, treatmentExpressions, controlExpressions);
+
+        double model1MaximumPosterior = this.calcPeakMaximumPosterior(treatmentIPOverdispersion, treatmentINPUTOverdispersion, controlIPOverdispersion, controlINPUTOverdispersion,
+                                                                      treatmentMethylationLevel, controlMethylationLevel, treatmentExpressions, controlExpressions, diffMethModel, peakIdx);
+
+        int model0ParamNum = 7, model1ParamNum = 8;
 
         // p(D|M=0) and p(D|M=1)
         double model0Proba = Math.pow(2*Math.PI, model0ParamNum*0.5) * Math.pow(model0Determinate, 0.5) * model0MaximumPosterior;
@@ -553,200 +445,138 @@ public class MethylationDifference {
     }
 
     /**
-     * size factors of each individual
-     * @param ipReads IP reads, shape individualNumber × geneNumber
-     * @param inputReads INPUT reads, shape individualNumber × geneNumber
-     * @return samples size factors
+     * calculate model covariance matrix determinate
+     * @param treatmentIPOverdispersion treatment IP Overdispersion, shape 1 × samplingTime
+     * @param treatmentINPUTOverdispersion treatment INPUT Overdispersion, shape 1 × samplingTime
+     * @param controlIPOverdispersion control IP Overdispersion, shape 1 × samplingTime
+     * @param controlINPUTOverdispersion control INPUT Overdispersion, shape 1 × samplingTime
+     * @param treatmentMethylationLevel treatment methylation level, shape 1 × samplingTime
+     * @param controlMethylationLevel control methylation level, shape 1 × samplingTime
+     * @param treatmentExpressions treatment expression, shape 1 × samplingTime
+     * @param controlExpressions control expression, shape 1 × samplingTime
+     * @return covariance matrix determinate
      */
-    private double[] sampleSizeFactors(int[][] ipReads, int[][] inputReads) {
-        BackgroundExpression be = new BackgroundExpression(ipReads, inputReads);
-        return be.getGlobalIPSizeFactor();
+    private double calcCovarianceMatrixDeterminate(double[] treatmentIPOverdispersion, double[] treatmentINPUTOverdispersion,
+                                                   double[] controlIPOverdispersion, double[] controlINPUTOverdispersion,
+                                                   double[] treatmentMethylationLevel, double[] controlMethylationLevel,
+                                                   double[] treatmentExpressions, double[] controlExpressions) {
+        CovarianceMatrix modelCovariance = new CovarianceMatrix(treatmentIPOverdispersion, treatmentINPUTOverdispersion,
+                                                                 controlIPOverdispersion, controlINPUTOverdispersion,
+                                                                 treatmentMethylationLevel, controlMethylationLevel,
+                                                                 treatmentExpressions, controlExpressions, this.burnIn);
+        double[][] modelCovarianceMatrix = modelCovariance.getCovarianceMatrix();
+        RealMatrix modelCovMatrix = new Array2DRowRealMatrix(modelCovarianceMatrix);
+
+        return new LUDecomposition(modelCovMatrix).getDeterminant();
+    }
+
+    /**
+     * calculate maximum posterior probability for a single peak
+     * @param treatmentIPOverdispersion treatment IP Overdispersion, shape 1 × samplingTime
+     * @param treatmentINPUTOverdispersion treatment INPUT Overdispersion, shape 1 × samplingTime
+     * @param controlIPOverdispersion control IP Overdispersion, shape 1 × samplingTime
+     * @param controlINPUTOverdispersion control INPUT Overdispersion, shape 1 × samplingTime
+     * @param treatmentMethylationLevel treatment methylation level, shape 1 × samplingTime
+     * @param controlMethylationLevel control methylation level, shape 1 × samplingTime
+     * @param treatmentExpressions treatment expression, shape 1 × samplingTime
+     * @param controlExpressions control expression, shape 1 × samplingTime
+     * @param model model
+     * @param peakIdx peak index
+     * @return maximum posterior
+     */
+    private double calcPeakMaximumPosterior(double[] treatmentIPOverdispersion, double[] treatmentINPUTOverdispersion,
+                                            double[] controlIPOverdispersion, double[] controlINPUTOverdispersion,
+                                            double[] treatmentMethylationLevel, double[] controlMethylationLevel,
+                                            double[] treatmentExpressions, double[] controlExpressions,
+                                            ModelSelection model, int peakIdx) {
+        BestModelParams modelBestParams = new BestModelParams(treatmentIPOverdispersion, treatmentINPUTOverdispersion,
+                                                              controlIPOverdispersion, controlINPUTOverdispersion,
+                                                              treatmentMethylationLevel, controlMethylationLevel,
+                                                              treatmentExpressions, controlExpressions,
+                                                              model, this.quantifiedExpansionEffect, this.burnIn, peakIdx);
+        modelBestParams.setSizeFactors(this.tretIPSizeFactors, this.tretINPUTSizeFactors,
+                                       this.ctrlIPSizeFactors, this.ctrlINPUTSizeFactors);
+
+        return modelBestParams.getMaximumPosterior();
+    }
+
+    /**
+     * load sampling result of a peak
+     * @param targetFile record file
+     * @return record data
+     */
+    private double[][] loadRecordData(File targetFile) throws IOException {
+        BufferedReader bfr = null;
+        double[] tretMethList = new double[this.samplingTime], ctrlMethList = new double[this.samplingTime],
+                 tretExpList = new double[this.samplingTime], ctrlExpList = new double[this.samplingTime];
+        try {
+            bfr = new BufferedReader(new InputStreamReader(new FileInputStream(targetFile)));
+            String line = "";
+            int lineNum = 0;
+            double tretMeth, ctrlMeth, tretExp, ctrlExp;
+            String[] info;
+            while (line != null) {
+                line = bfr.readLine();
+                if (line != null) {
+                    info = line.split("\t");
+                    tretMeth = Double.valueOf(info[0]);
+                    ctrlMeth = Double.valueOf(info[1]);
+                    tretExp = Double.valueOf(info[2]);
+                    ctrlExp = Double.valueOf(info[3]);
+
+                    tretMethList[lineNum] = tretMeth;
+                    tretExpList[lineNum] = tretExp;
+                    ctrlMethList[lineNum] = ctrlMeth;
+                    ctrlExpList[lineNum] = ctrlExp;
+                    lineNum++;
+                }
+            }
+        } finally {
+            if (bfr != null) {
+                try {
+                    bfr.close();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+
+        return new double[][] {tretMethList, ctrlMethList, tretExpList, ctrlExpList};
+    }
+
+    /**
+     * size factors of each individual
+     */
+    private void calcSampleSizeFactors() {
+        // shape 1 × individualNumber
+        this.tretIPSizeFactors = new double[this.tretIndividualNumber];
+        this.tretINPUTSizeFactors = new double[this.tretIndividualNumber];
+        this.ctrlIPSizeFactors = new double[this.ctrlIndividualNumber];
+        this.ctrlINPUTSizeFactors = new double[this.ctrlIndividualNumber];
+        SizeFactor sizeFactor;
+        double ipFactor, inputFactor;
+        int[] individualIPReads, individualINPUTReads;
+        for (int i=0; i<this.tretIndividualNumber; i++) {
+            individualIPReads = this.treatmentIPReads[i];
+            individualINPUTReads = this.treatmentINPUTReads[i];
+            sizeFactor = new SizeFactor(individualIPReads, individualINPUTReads);
+            ipFactor = sizeFactor.getSizeFactor(false);
+            inputFactor = sizeFactor.getSizeFactor(true);
+            this.tretIPSizeFactors[i] = ipFactor;
+            this.tretINPUTSizeFactors[i] = inputFactor;
+        }
+
+        for (int i=0; i<this.ctrlIndividualNumber; i++) {
+            individualIPReads = this.controlIPReads[i];
+            individualINPUTReads = this.controlINPUTReads[i];
+            sizeFactor = new SizeFactor(individualIPReads, individualINPUTReads);
+            ipFactor = sizeFactor.getSizeFactor(false);
+            inputFactor = sizeFactor.getSizeFactor(true);
+            this.ctrlIPSizeFactors[i] = ipFactor;
+            this.ctrlINPUTSizeFactors[i] = inputFactor;
+        }
         // only for simulation data test
         // return new double[] {1, 1, 1};
-    }
-
-    /**
-     * calculate log-likelihood with quantification result
-     * @param quantify quantification result
-     * @param model model
-     * @return log-likelihood
-     */
-    private double modelLogLikelihood(double[] quantify, ModelSelection model) {
-        double tretMeth = quantify[0];
-        double ctrlMeth = quantify[1];
-        double nonspecificEnrich = quantify[2];
-        double tretIPOverdispersion = quantify[3];
-        double tretINPUTOverdispersion = quantify[4];
-        double ctrlIPOverdispersion = quantify[5];
-        double ctrlINPUTOverdispersion = quantify[6];
-        double[] newTretIPReadsExpectation, newTretIPNonPeakExpectation, newTretINPUTReadsExpectation, newTretINPUTNonPeakExpectation,
-                 newCtrlIPReadsExpectation, newCtrlIPNonPeakExpectation, newCtrlINPUTReadsExpectation, newCtrlINPUTNonPeakExpectation;
-        double[][] newExpectations;
-
-        newExpectations = model.renewReadsExpectationViaNonspecificEnrich(true, new double[]{tretMeth}, new double[]{nonspecificEnrich},
-                                                                          this.tretIPSizeFactors, this.tretINPUTSizeFactors, this.tretIPNonPeakSizeFactors, this.tretINPUTNonPeakSizeFactors);
-        newTretIPReadsExpectation = newExpectations[0];
-        newTretIPNonPeakExpectation = newExpectations[1];
-        newTretINPUTReadsExpectation = newExpectations[2];
-        newTretINPUTNonPeakExpectation = newExpectations[3];
-
-        newExpectations = model.renewReadsExpectationViaNonspecificEnrich(false, new double[]{ctrlMeth}, new double[]{nonspecificEnrich},
-                                                                           this.ctrlIPSizeFactors, this.ctrlINPUTSizeFactors, this.ctrlIPNonPeakSizeFactors, this.ctrlINPUTNonPeakSizeFactors);
-        newCtrlIPReadsExpectation = newExpectations[0];
-        newCtrlIPNonPeakExpectation = newExpectations[1];
-        newCtrlINPUTReadsExpectation = newExpectations[2];
-        newCtrlINPUTNonPeakExpectation = newExpectations[3];
-
-        return model.logLikelihood(newTretIPReadsExpectation, newTretINPUTReadsExpectation, newCtrlIPReadsExpectation, newCtrlINPUTReadsExpectation,
-                                   newTretIPNonPeakExpectation, newTretINPUTNonPeakExpectation, newCtrlIPNonPeakExpectation, newCtrlINPUTNonPeakExpectation,
-                                   tretIPOverdispersion, tretINPUTOverdispersion, ctrlIPOverdispersion, ctrlINPUTOverdispersion);
-    }
-
-    /**
-     * calculate log-prior with quantification result
-     * @param quantify quantification result
-     * @param model model
-     * @return log-likelihood
-     */
-    private double modelLogPrior(double[] quantify, ModelSelection model) {
-        double tretMeth = quantify[0];
-        double ctrlMeth = quantify[1];
-        double nonspecificEnrich = quantify[2];
-        double tretIPOverdispersion = quantify[3];
-        double tretINPUTOverdispersion = quantify[4];
-        double ctrlIPOverdispersion = quantify[5];
-        double ctrlINPUTOverdispersion = quantify[6];
-
-        return model.logPriority(tretIPOverdispersion, tretINPUTOverdispersion, ctrlIPOverdispersion, ctrlINPUTOverdispersion,
-                                 tretMeth, ctrlMeth, nonspecificEnrich, 0,0,0,0);
-    }
-
-    /**
-     * treatment and control group IP and INPUT reads count
-     * @param geneIdx gene index
-     * @return reads count, shape 1 × individualNumber
-     */
-    private int[][] getGeneReads(int geneIdx) {
-        int[] tretIPReads = new int[this.tretIndividualNumber], tretINPUTReads = new int[this.tretIndividualNumber],
-              ctrlIPReads = new int[this.ctrlIndividualNumber], ctrlINPUTReads = new int[this.ctrlIndividualNumber],
-              tretIPNonPeak = new int[this.tretIndividualNumber], tretINPUTNonPeak = new int[this.tretIndividualNumber],
-              ctrlIPNonPeak = new int[this.ctrlIndividualNumber], ctrlINPUTNonPeak = new int[this.ctrlIndividualNumber];
-
-        for (int individualIdx=0; individualIdx<this.tretIndividualNumber; individualIdx++) {
-            tretIPReads[individualIdx] = this.treatmentIPReads[individualIdx][geneIdx];
-            tretINPUTReads[individualIdx] = this.treatmentINPUTReads[individualIdx][geneIdx];
-            tretIPNonPeak[individualIdx] = this.treatmentIPNonPeak[individualIdx][geneIdx];
-            tretINPUTNonPeak[individualIdx] = this.treatmentINPUTNonPeak[individualIdx][geneIdx];
-        }
-
-        for (int individualIdx=0; individualIdx<this.ctrlIndividualNumber; individualIdx++) {
-            ctrlIPReads[individualIdx] = this.controlIPReads[individualIdx][geneIdx];
-            ctrlINPUTReads[individualIdx] = this.controlINPUTReads[individualIdx][geneIdx];
-            ctrlIPNonPeak[individualIdx] = this.controlIPNonPeak[individualIdx][geneIdx];
-            ctrlINPUTNonPeak[individualIdx] = this.controlINPUTNonPeak[individualIdx][geneIdx];
-        }
-
-        return new int[][] {tretIPReads, tretINPUTReads, ctrlIPReads, ctrlINPUTReads,
-                            tretIPNonPeak, tretINPUTNonPeak, ctrlIPNonPeak, ctrlINPUTNonPeak};
-    }
-
-    /**
-     * treatment and control group IP and INPUT reads count expectations
-     * @param geneIdx gene index
-     * @return reads count expectations, shape 1 × individualNumber
-     */
-    private double[][] getGeneExpectation(int geneIdx) {
-        double[] tretIPReads = new double[this.tretIndividualNumber], tretINPUTReads = new double[this.tretIndividualNumber],
-                 ctrlIPReads = new double[this.ctrlIndividualNumber], ctrlINPUTReads = new double[this.ctrlIndividualNumber],
-                 tretIPNonPeak = new double[this.tretIndividualNumber], tretINPUTNonPeak = new double[this.tretIndividualNumber],
-                 ctrlIPNonPeak = new double[this.ctrlIndividualNumber], ctrlINPUTNonPeak = new double[this.ctrlIndividualNumber];
-
-        for (int individualIdx=0; individualIdx<this.tretIndividualNumber; individualIdx++) {
-            tretIPReads[individualIdx] = this.tretIPReadsExpectation[individualIdx][geneIdx];
-            tretINPUTReads[individualIdx] = this.tretINPUTReadsExpectation[individualIdx][geneIdx];
-            tretIPNonPeak[individualIdx] = this.tretIPNonPeakExpectation[individualIdx][geneIdx];
-            tretINPUTNonPeak[individualIdx] = this.tretINPUTNonPeakExpectation[individualIdx][geneIdx];
-        }
-
-        for (int individualIdx=0; individualIdx<this.ctrlIndividualNumber; individualIdx++) {
-            ctrlIPReads[individualIdx] = this.ctrlIPReadsExpectation[individualIdx][geneIdx];
-            ctrlINPUTReads[individualIdx] = this.ctrlINPUTReadsExpectation[individualIdx][geneIdx];
-            ctrlIPNonPeak[individualIdx] = this.ctrlIPNonPeakExpectation[individualIdx][geneIdx];
-            ctrlINPUTNonPeak[individualIdx] = this.ctrlINPUTNonPeakExpectation[individualIdx][geneIdx];
-        }
-
-        return new double[][] {tretIPReads, tretINPUTReads, ctrlIPReads, ctrlINPUTReads,
-                               tretIPNonPeak, tretINPUTNonPeak, ctrlIPNonPeak, ctrlINPUTNonPeak};
-    }
-
-    /**
-     * set sampling list for each model
-     * @param geneIdx gene index
-     */
-    private void setModelSamplingList(SameMethylationLevelModel sameMethylationLevelModel, DiffMethylationLevelModel diffMethylationLevelModel, int geneIdx) {
-        // here m1, m2 represent same methylation level model and variant methylation level model, respectively
-        double[] m1TretMethLevel, m2TretMethLevel, m1TretBkgExp, m2TretBkgExp, m1TretIPOverdispersion, m1TretINPUTOverdispersion, m2TretIPOverdispersion, m2TretINPUTOverdispersion,
-                m1CtrlMethLevel, m2CtrlMethLevel, m1CtrlBkgExp, m2CtrlBkgExp, m1CtrlIPOverdispersion, m1CtrlINPUTOverdispersion, m2CtrlIPOverdispersion, m2CtrlINPUTOverdispersion,
-                m1TretNonPeakExp, m1CtrlNonPeakExp, m2TretNonPeakExp, m2CtrlNonPeakExp, m1NonspecificEnrich, m2NonspecificEnrich;
-        // set sampling list for each model
-        m1TretMethLevel = new double[this.samplingTime];
-        m2TretMethLevel = new double[this.samplingTime];
-        m1TretMethLevel[0] = 0.01;
-        m2TretMethLevel[0] = 0.01;
-        m1CtrlMethLevel = new double[this.samplingTime];
-        m2CtrlMethLevel = new double[this.samplingTime];
-        m1CtrlMethLevel[0] = 0.01;
-        m2CtrlMethLevel[0] = 0.01;
-
-        m1TretBkgExp = new double[this.samplingTime];
-        m2TretBkgExp = new double[this.samplingTime];
-        m1TretBkgExp[0] = this.tretGeneBackgroundExpression[geneIdx];
-        m2TretBkgExp[0] = this.tretGeneBackgroundExpression[geneIdx];
-        m1CtrlBkgExp = new double[this.samplingTime];
-        m2CtrlBkgExp = new double[this.samplingTime];
-        m1CtrlBkgExp[0] = this.ctrlGeneBackgroundExpression[geneIdx];
-        m2CtrlBkgExp[0] = this.ctrlGeneBackgroundExpression[geneIdx];
-
-        m1TretNonPeakExp = new double[this.samplingTime];
-        m2TretNonPeakExp = new double[this.samplingTime];
-        m1TretNonPeakExp[0] = this.tretNonPeakExpressionMean[geneIdx];
-        m2TretNonPeakExp[0] = this.tretNonPeakExpressionMean[geneIdx];
-        m1CtrlNonPeakExp = new double[this.samplingTime];
-        m2CtrlNonPeakExp = new double[this.samplingTime];
-        m1CtrlNonPeakExp[0] = this.ctrlNonPeakExpressionMean[geneIdx];
-        m2CtrlNonPeakExp[0] = this.ctrlNonPeakExpressionMean[geneIdx];
-
-        m1TretIPOverdispersion = new double[this.samplingTime];
-        m2TretIPOverdispersion = new double[this.samplingTime];
-        m1TretIPOverdispersion[0] = 0.1;
-        m2TretIPOverdispersion[0] = 0.1;
-        m1TretINPUTOverdispersion = new double[this.samplingTime];
-        m2TretINPUTOverdispersion = new double[this.samplingTime];
-        m1TretINPUTOverdispersion[0] = 0.1;
-        m2TretINPUTOverdispersion[0] = 0.1;
-
-        m1CtrlIPOverdispersion = new double[this.samplingTime];
-        m2CtrlIPOverdispersion = new double[this.samplingTime];
-        m1CtrlIPOverdispersion[0] = 0.1;
-        m2CtrlIPOverdispersion[0] = 0.1;
-        m1CtrlINPUTOverdispersion = new double[this.samplingTime];
-        m2CtrlINPUTOverdispersion = new double[this.samplingTime];
-        m1CtrlINPUTOverdispersion[0] = 0.1;
-        m2CtrlINPUTOverdispersion[0] = 0.1;
-
-        m1NonspecificEnrich = new double[this.samplingTime];
-        m2NonspecificEnrich = new double[this.samplingTime];
-        m1NonspecificEnrich[0] = 0.1;
-        m2NonspecificEnrich[0] = 0.1;
-
-        sameMethylationLevelModel.setSamplingList(m1TretIPOverdispersion, m1TretINPUTOverdispersion,
-                                                  m1CtrlIPOverdispersion, m1CtrlINPUTOverdispersion,
-                                                  m1TretBkgExp, m1CtrlBkgExp, m1TretNonPeakExp, m1CtrlNonPeakExp,
-                                                  m1TretMethLevel, m1CtrlMethLevel, m1NonspecificEnrich);
-        diffMethylationLevelModel.setSamplingList(m2TretIPOverdispersion, m2TretINPUTOverdispersion,
-                                                  m2CtrlIPOverdispersion, m2CtrlINPUTOverdispersion,
-                                                  m2TretBkgExp, m2CtrlBkgExp, m2TretNonPeakExp, m2CtrlNonPeakExp,
-                                                  m2TretMethLevel, m2CtrlMethLevel, m2NonspecificEnrich);
     }
 
     /**
@@ -758,7 +588,7 @@ public class MethylationDifference {
         try {
             bfw = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(new File(fileName))));
             ArrayList<Integer> sortedList = new ArrayList<>(this.bayesFactors.keySet().stream().sorted(((o1, o2) -> o1-o2)).collect(Collectors.toList()));
-            bfw.write("#geneIdx\tBF\ttretMeth\tctrlMeth\tnonspecificEnrich\ttretIPOverdispersion\ttretINPUTOverdispersion\tctrlIPOverdispersion\tctrlINPUTOverdispersion");//\ttretBkgExp\tctrlBkgExp\ttretNonPeakExp\tctrlNonPeakExp
+            bfw.write("#geneIdx\tBF\ttretMeth\tctrlMeth\ttretBkgExp\tctrlBkgExp\ttretIPOverdispersion\ttretINPUTOverdispersion\tctrlIPOverdispersion\tctrlINPUTOverdispersion");//\ttretNonPeakExp\tctrlNonPeakExp
             bfw.newLine();
             String line, records, bf;
             double[] quantify;
@@ -766,7 +596,7 @@ public class MethylationDifference {
                 quantify = this.quantifyResult.get(geneIdx);
                 records = Arrays.stream(quantify).mapToObj(x -> (this.df.format((Double) x))).collect(Collectors.joining("\t"));
                 bf = this.df.format(this.bayesFactors.get(geneIdx));
-                line = geneIdx+1 + "\t" + bf + "\t" + records;
+                line = String.join("\t",new String[] {Integer.toString(geneIdx+1), bf, records});
                 bfw.write(line);
                 bfw.newLine();
             }

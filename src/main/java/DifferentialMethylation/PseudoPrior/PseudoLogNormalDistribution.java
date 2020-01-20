@@ -6,6 +6,7 @@ import java.util.ArrayList;
  * estimate parameters of log normal distribution,
  * reference to https://scholarsarchive.byu.edu/cgi/viewcontent.cgi?article=2927&context=etd
  */
+@Deprecated
 public class PseudoLogNormalDistribution {
     public static double[] estimate(ArrayList<Double> dataList) {
         try {

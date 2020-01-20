@@ -1,100 +1,88 @@
 package DifferentialMethylation;
 
 public class Parameters {
-    private double tretIPOverdispersion, tretINPUTOverdispersion, ctrlIPOverdispersion, ctrlINPUTOverdispersion,
-                   tretMethylation, ctrlMethylation, tretBkgExp, tretNonPeakBkgExp, ctrlBkgExp, ctrlNonPeakBkgExp, nonspecificEnrichment;
-
-    private double[] tretIPSizeFactors, tretINPUTSizeFactors, tretIPNonPeakSizeFactors, tretINPUTNonPeakSizeFactors,
-                     ctrlIPSizeFactors, ctrlINPUTSizeFactors, ctrlIPNonPeakSizeFactors, ctrlINPUTNonPeakSizeFactors;
+    private double quantifiedTretIPOverdispersion, quantifiedTretINPUTOverdispersion
+                   , quantifiedCtrlIPOverdispersion, quantifiedCtrlINPUTOverdispersion, quantifiedExpansionEffect;
+    private double[] quantifiedTretMethLevel, quantifiedCtrlMethLevel, quantifiedTretExpression, quantifiedCtrlExpression;
+    // shape 1 × samplingTime
+    private double[] tretIPOverdispersion, tretINPUTOverdispersion, ctrlIPOverdispersion, ctrlINPUTOverdispersion;
+    // shape 1 × peakNumber
+    private double[] tretMethylation, ctrlMethylation, tretBkgExp, ctrlBkgExp, expansionEffect;
+    // shape 1 × individualNumber
+    private double[] tretIPSizeFactors, tretINPUTSizeFactors, ctrlIPSizeFactors, ctrlINPUTSizeFactors;
 
     public Parameters() {}
 
-    public double getTretIPOverdispersion() {
+    public double[] getTretIPOverdispersion() {
         return this.tretIPOverdispersion;
     }
 
-    public void setTretIPOverdispersion(double value) {
+    public void setTretIPOverdispersion(double[] value) {
         this.tretIPOverdispersion = value;
     }
 
-    public double getTretINPUTOverdispersion() {
+    public double[] getTretINPUTOverdispersion() {
         return this.tretINPUTOverdispersion;
     }
 
-    public void setTretINPUTOverdispersion(double value) {
+    public void setTretINPUTOverdispersion(double[] value) {
         this.tretINPUTOverdispersion = value;
     }
 
-    public double getCtrlIPOverdispersion() {
+    public double[] getCtrlIPOverdispersion() {
         return this.ctrlIPOverdispersion;
     }
 
-    public void setCtrlIPOverdispersion(double value) {
+    public void setCtrlIPOverdispersion(double[] value) {
         this.ctrlIPOverdispersion = value;
     }
 
-    public double getCtrlINPUTOverdispersion() {
+    public double[] getCtrlINPUTOverdispersion() {
         return this.ctrlINPUTOverdispersion;
     }
 
-    public void setCtrlINPUTOverdispersion(double value) {
+    public void setCtrlINPUTOverdispersion(double[] value) {
         this.ctrlINPUTOverdispersion = value;
     }
 
-    public double getTretMethylation() {
+    public double[] getTretMethylation() {
         return this.tretMethylation;
     }
 
-    public void setTretMethylation(double value) {
+    public void setTretMethylation(double[] value) {
         this.tretMethylation = value;
     }
 
-    public double getCtrlMethylation() {
+    public double[] getCtrlMethylation() {
         return this.ctrlMethylation;
     }
 
-    public void setCtrlMethylation(double value) {
+    public void setCtrlMethylation(double[] value) {
         this.ctrlMethylation = value;
     }
 
-    public double getTretBkgExp() {
+    public void setExpansionEffect(double[] value) {
+        this.expansionEffect = value;
+    }
+
+    public double[] getExpansionEffect() {
+        return this.expansionEffect;
+    }
+
+    public double[] getTretBkgExp() {
         return this.tretBkgExp;
     }
 
-    public void setTretBkgExp(double value) {
+    public void setTretBkgExp(double[] value) {
         this.tretBkgExp = value;
     }
 
-    public double getTretNonPeakBkgExp() {
-        return this.tretNonPeakBkgExp;
-    }
-
-    public void setTretNonPeakBkgExp(double value) {
-        this.tretNonPeakBkgExp = value;
-    }
-
-    public double getCtrlBkgExp() {
+    public double[] getCtrlBkgExp() {
         return this.ctrlBkgExp;
     }
 
-    public void setCtrlBkgExp(double value) {
+    public void setCtrlBkgExp(double[] value) {
         this.ctrlBkgExp = value;
-    }
-
-    public double getCtrlNonPeakBkgExp() {
-        return this.ctrlNonPeakBkgExp;
-    }
-
-    public void setCtrlNonPeakBkgExp(double value) {
-        this.ctrlNonPeakBkgExp = value;
-    }
-
-    public void setNonspecificEnrichment(double value) {
-        this.nonspecificEnrichment = value;
-    }
-
-    public double getNonspecificEnrichment() {
-        return this.nonspecificEnrichment;
     }
 
     public void setTretINPUTSizeFactors(double[] tretINPUTSizeFactors) {
@@ -105,28 +93,12 @@ public class Parameters {
         return this.tretINPUTSizeFactors;
     }
 
-    public void setTretINPUTNonPeakSizeFactors(double[] tretINPUTNonPeakSizeFactors) {
-        this.tretINPUTNonPeakSizeFactors = tretINPUTNonPeakSizeFactors;
-    }
-
-    public double[] getTretINPUTNonPeakSizeFactors() {
-        return this.tretINPUTNonPeakSizeFactors;
-    }
-
     public void setTretIPSizeFactors(double[] tretIPSizeFactors) {
         this.tretIPSizeFactors = tretIPSizeFactors;
     }
 
     public double[] getTretIPSizeFactors() {
         return this.tretIPSizeFactors;
-    }
-
-    public void setTretIPNonPeakSizeFactors(double[] tretIPNonPeakSizeFactors) {
-        this.tretIPNonPeakSizeFactors = tretIPNonPeakSizeFactors;
-    }
-
-    public double[] getTretIPNonPeakSizeFactors() {
-        return this.tretIPNonPeakSizeFactors;
     }
 
     public void setCtrlINPUTSizeFactors(double[] ctrlINPUTSizeFactors) {
@@ -137,14 +109,6 @@ public class Parameters {
         return this.ctrlINPUTSizeFactors;
     }
 
-    public void setCtrlINPUTNonPeakSizeFactors(double[] ctrlINPUTNonPeakSizeFactors) {
-        this.ctrlINPUTNonPeakSizeFactors = ctrlINPUTNonPeakSizeFactors;
-    }
-
-    public double[] getCtrlINPUTNonPeakSizeFactors() {
-        return this.ctrlINPUTNonPeakSizeFactors;
-    }
-
     public void setCtrlIPSizeFactors(double[] ctrlIPSizeFactors) {
         this.ctrlIPSizeFactors = ctrlIPSizeFactors;
     }
@@ -153,11 +117,56 @@ public class Parameters {
         return this.ctrlIPSizeFactors;
     }
 
-    public void setCtrlIPNonPeakSizeFactors(double[] ctrlIPNonPeakSizeFactors) {
-        this.ctrlIPNonPeakSizeFactors = ctrlIPNonPeakSizeFactors;
+    public void setQuantifiedCtrlExpression(double[] quantifiedCtrlExpression) {
+        this.quantifiedCtrlExpression = quantifiedCtrlExpression;
     }
 
-    public double[] getCtrlIPNonPeakSizeFactors() {
-        return this.ctrlIPNonPeakSizeFactors;
+    public double[] getQuantifiedCtrlExpression() {
+        return this.quantifiedCtrlExpression;
+    }
+
+    public void setQuantifiedTretExpression(double[] quantifiedTretExpression) {
+        this.quantifiedTretExpression = quantifiedTretExpression;
+    }
+
+    public double[] getQuantifiedTretExpression() {
+        return this.quantifiedTretExpression;
+    }
+
+    public void setQuantifiedTretMethLevel(double[] quantifiedTretMethLevel) {
+        this.quantifiedTretMethLevel = quantifiedTretMethLevel;
+    }
+
+    public double[] getQuantifiedTretMethLevel() {
+        return this.quantifiedTretMethLevel;
+    }
+
+    public void setQuantifiedCtrlMethLevel(double[] quantifiedCtrlMethLevel) {
+        this.quantifiedCtrlMethLevel = quantifiedCtrlMethLevel;
+    }
+
+    public double[] getQuantifiedCtrlMethLevel() {
+        return this.quantifiedCtrlMethLevel;
+    }
+
+    public void setOverdispersions(double quantifiedTretIPOverdispersion, double quantifiedTretINPUTOverdispersion,
+                                   double quantifiedCtrlIPOverdispersion, double quantifiedCtrlINPUTOverdispersion) {
+        this.quantifiedTretIPOverdispersion = quantifiedTretIPOverdispersion;
+        this.quantifiedCtrlIPOverdispersion = quantifiedCtrlIPOverdispersion;
+        this.quantifiedTretINPUTOverdispersion = quantifiedTretINPUTOverdispersion;
+        this.quantifiedCtrlINPUTOverdispersion = quantifiedCtrlINPUTOverdispersion;
+    }
+
+    public double[] getOverdispersions() {
+        return new double[] {this.quantifiedTretIPOverdispersion, this.quantifiedCtrlIPOverdispersion,
+                             this.quantifiedTretINPUTOverdispersion, this.quantifiedCtrlINPUTOverdispersion};
+    }
+
+    public void setQuantifiedExpansionEffect(double quantifiedExpansionEffect) {
+        this.quantifiedExpansionEffect = quantifiedExpansionEffect;
+    }
+
+    public double getQuantifiedExpansionEffect() {
+        return this.quantifiedExpansionEffect;
     }
 }

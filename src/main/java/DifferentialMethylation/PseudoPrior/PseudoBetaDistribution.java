@@ -6,6 +6,7 @@ import java.util.ArrayList;
  * estimate parameters of Beta distribution,
  * reference to https://pdfs.semanticscholar.org/ddc7/cb7bc07d44dc4b3395def445016ecc8c00cc.pdf
  */
+@Deprecated
 public class PseudoBetaDistribution {
     public static double[] estimate(ArrayList<Double> dataList) {
         try {

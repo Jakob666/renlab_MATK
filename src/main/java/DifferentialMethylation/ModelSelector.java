@@ -5,6 +5,7 @@ import org.apache.commons.math3.distribution.UniformRealDistribution;
 /**
  * Model selection between two models, the choice based on Bayes factor
  */
+@Deprecated
 public class ModelSelector {
     private UniformRealDistribution urd;
 

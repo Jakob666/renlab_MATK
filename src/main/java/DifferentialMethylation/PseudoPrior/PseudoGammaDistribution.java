@@ -7,6 +7,7 @@ import java.util.NoSuchElementException;
  * estimate gamma distribution parameters with maximum likelihood method,
  * reference to https://en.wikipedia.org/wiki/Gamma_distribution#Maximum_likelihood_estimation
  */
+@Deprecated
 public class PseudoGammaDistribution {
     public static double[] estimate(ArrayList<Double> dataList) {
         double sum, logSum, sampleNum;

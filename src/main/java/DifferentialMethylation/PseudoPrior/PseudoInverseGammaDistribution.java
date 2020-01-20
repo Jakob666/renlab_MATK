@@ -7,6 +7,7 @@ import java.util.ArrayList;
  * inverse Gamma distribution parameter estimation with moment method
  * reference to https://arxiv.org/pdf/1605.01019.pdf
  */
+@Deprecated
 public class PseudoInverseGammaDistribution {
 
     public static double[] estimate(ArrayList<Double> dataList) {

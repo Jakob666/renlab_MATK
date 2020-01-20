@@ -26,7 +26,7 @@ public class QuantificationModel {
     private SamplingRecords samplingRecords;
     private ExecutorService executorService;
     private ReentrantLock lock;
-    private DecimalFormat df = new DecimalFormat("0.0000");
+    private DecimalFormat df = new DecimalFormat("0.000000");
 
     public QuantificationModel(int[][] ipReads, int[][] inputReads,
                                MethylationLevelSampler methLevelSampler, ExpansionEffectSampler expansionEffectSampler,
@@ -86,8 +86,7 @@ public class QuantificationModel {
             this.expansionEffectSampling(this.samplingRecords, t);
             this.backGroundExpressionSampling(this.samplingRecords, t);
             this.methylationLevelSampling(this.samplingRecords, t);
-            if (t<this.burnIn)
-                this.renewRecordFiles();
+            this.renewRecordFiles();
         }
     }
 
@@ -500,8 +499,8 @@ public class QuantificationModel {
             boolean succ;
             try {
                 bfr = new BufferedReader(new InputStreamReader(new FileInputStream(targetFile)));
-                methylationValues = new double[this.samplingTime - this.burnIn];
-                expressionValues = new double[this.samplingTime - this.burnIn];
+                methylationValues = new double[this.samplingTime];
+                expressionValues = new double[this.samplingTime];
                 int lineNum = 0;
                 String line = "";
                 String[] info;
@@ -552,6 +551,9 @@ public class QuantificationModel {
             ie.printStackTrace();
         } finally {
             this.executorService.shutdown();
+            boolean succ = new File(this.tmpDir).delete();
+            if (!succ)
+                System.out.println("can not delete temporary directory " + this.tmpDir);
         }
 
         double[] ipOverdispersions = this.samplingRecords.getIpOverdispersions();
@@ -570,6 +572,7 @@ public class QuantificationModel {
     private double calcMedian(double[] values) {
         if (values.length == 1)
             return values[0];
+        values = Arrays.stream(values).skip(this.burnIn).toArray();
         Arrays.sort(values);
         int medianIdx = values.length / 2;
         if (values.length % 2 == 0)

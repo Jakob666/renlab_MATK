@@ -3,6 +3,7 @@ package DifferentialMethylation.PseudoPrior;
 import java.util.ArrayList;
 import java.util.NoSuchElementException;
 
+@Deprecated
 public class CommonMethod {
 
     public static double calcMean(ArrayList<Double> dataList) {

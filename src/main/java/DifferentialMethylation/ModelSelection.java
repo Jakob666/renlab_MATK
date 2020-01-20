@@ -2,31 +2,32 @@ package DifferentialMethylation;
 
 import ProbabilityCalculation.ProbabilityCalculator;
 import Quantification.*;
-import SeqDataModel.ReadsExpectation;
 
-import java.util.ArrayList;
+import java.io.*;
+import java.text.DecimalFormat;
+import java.util.Arrays;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.locks.ReentrantLock;
 
 public abstract class ModelSelection {
-    private int individualNumber;
+    protected int tretIndividualNumber, ctrlIndividualNumber, peakNumber, samplingTime, burnIn, threadNumber;
+    protected double quantifiedExpansionEffect;
+    protected boolean specificExpansionEffect = false;
+    private String tmpDir;
     protected Parameters parameters;
-    protected OverdispersionSampler tretIPOverdispersionSampler, tretINPUTOverdispersionSampler, ctrlIPOverdispersionSampler, ctrlINPUTOverdispersionSampler,
-              tretIPOverdispersionPseudoSampler, tretINPUTOverdispersionPseudoSampler, ctrlIPOverdispersionPseudoSampler, ctrlINPUTOverdispersionPseudoSampler;
-    protected NonSpecificEnrichmentSampler nonspecificEnrichSampler, nonspecificEnrichPseudoSampler;
-    protected MethylationLevelSampler tretMethylationLevelSampler, ctrlMethylationLevelSampler, tretMethylationLevelPseudoSampler, ctrlMethylationLevelPseudoSampler;
-    protected BackgroundExpressionSampler treatmentBackgroundExpressionSampler, controlBackgroundExpressionSampler, treatmentBackgroundExpressionPseudoSampler, controlBackgroundExpressionPseudoSampler,
-                                          treatmentNonPeakExpressionSampler, controlNonPeakExpressionSampler, treatmentNonPeakExpressionPseudoSampler, controlNonPeakExpressionPseudoSampler;
-    // shape 1 × samplingTime
-    protected double[] treatmentIPOverdispersion, treatmentINPUTOverdispersion, controlIPOverdispersion, controlINPUTOverdispersion,
-                       treatmentBkgExp, treatmentNonPeakBkgExp, controlBkgExp, controlNonPeakBkgExp, treatmentMethylationLevel, controlMethylationLevel, nonspecificEnrichment;
-    // shape 1 × individualNumber
-    protected int[] treatmentIPReads, treatmentINPUTReads, controlIPReads, controlINPUTReads,
-                    treatmentIPNonPeakReads, treatmentINPUTNonPeakReads, controlIPNonPeakReads, controlINPUTNonPeakReads;
-    protected double[] treatmentIPExpectations, treatmentINPUTExpectations, controlIPExpectations, controlINPUTExpectations,
-                       treatmentIPNonPeakExpect, treatmentINPUTNonPeakExpect, controlIPNonPeakExpect, controlINPUTNonPeakExpect;
+    protected OverdispersionSampler tretIPOverdispersionSampler, tretINPUTOverdispersionSampler, ctrlIPOverdispersionSampler, ctrlINPUTOverdispersionSampler;
+    protected MethylationLevelSampler tretMethylationLevelSampler, ctrlMethylationLevelSampler;
+    protected BackgroundExpressionSampler[] treatmentBackgroundExpressionSamplers, controlBackgroundExpressionSamplers;
+    protected ExpansionEffectSampler expansionEffectSampler;
+    // shape individualNumber × peakNumber
+    protected int[][] treatmentIPReads, treatmentINPUTReads, controlIPReads, controlINPUTReads;
+    protected double[][] treatmentIPExpectations, treatmentINPUTExpectations, controlIPExpectations, controlINPUTExpectations;
     protected MHSampling mhSampling = new MHSampling();
-    protected ArrayList<Double> tretIPOverdispersionList, tretINPUTOverdispersionList, ctrlIPOverdispersionList, ctrlINPUTOverdispersionList,
-                                tretMethyLationList, ctrlMethylationList, nonspecificEnrichList,
-                                tretBkgExpList, ctrlBkgExpList, tretNonPeakExpList, ctrlNonPeakExpList;
+    protected ExecutorService executorService;
+    protected ReentrantLock lock;
+    private DecimalFormat df = new DecimalFormat("0.000000");
 
     /**
      * Construct with default prior probabilities of same methylation level model and variant methylation level model
@@ -40,152 +41,163 @@ public abstract class ModelSelection {
      * @param controlBackgroundExpressionSampler control background expression sampler follows log-normal distribution
      */
     public ModelSelection(MethylationLevelSampler tretMethylationLevelSampler, MethylationLevelSampler ctrlMethylationLevelSampler,
-                          NonSpecificEnrichmentSampler nonspecificEnrichSampler,
                           OverdispersionSampler tretIPOverdispersionSampler, OverdispersionSampler tretINPUTOverdispersionSampler,
                           OverdispersionSampler ctrlIPOverdispersionSampler, OverdispersionSampler ctrlINPUTOverdispersionSampler,
-                          BackgroundExpressionSampler treatmentBackgroundExpressionSampler, BackgroundExpressionSampler treatmentNonPeakExpressionSampler,
-                          BackgroundExpressionSampler controlBackgroundExpressionSampler, BackgroundExpressionSampler controlNonPeakExpressionSampler) {
+                          BackgroundExpressionSampler[] treatmentBackgroundExpressionSampler, BackgroundExpressionSampler[] controlBackgroundExpressionSampler,
+                          ExpansionEffectSampler expansionEffectSampler, int samplingTime, int burnIn, int threadNumber, String tmpDir) {
         this.tretMethylationLevelSampler = tretMethylationLevelSampler;
         this.ctrlMethylationLevelSampler = ctrlMethylationLevelSampler;
-        this.nonspecificEnrichSampler = nonspecificEnrichSampler;
         this.tretIPOverdispersionSampler = tretIPOverdispersionSampler;
         this.tretINPUTOverdispersionSampler = tretINPUTOverdispersionSampler;
         this.ctrlIPOverdispersionSampler = ctrlIPOverdispersionSampler;
         this.ctrlINPUTOverdispersionSampler = ctrlINPUTOverdispersionSampler;
-        this.controlBackgroundExpressionSampler = controlBackgroundExpressionSampler;
-        this.treatmentBackgroundExpressionSampler = treatmentBackgroundExpressionSampler;
-        this.treatmentNonPeakExpressionSampler = treatmentNonPeakExpressionSampler;
-        this.controlNonPeakExpressionSampler = controlNonPeakExpressionSampler;
-    }
-
-    /**
-     * treatment and control group reads count of a single gene
-     * @param treatmentIPReads treatment IP gene reads count, shape 1 × individualNumber
-     * @param treatmentINPUTReads treatment INPUT gene reads count, shape 1 × individualNumber
-     * @param controlIPReads control IP gene reads count, shape 1 × individualNumber
-     * @param controlINPUTReads control INPUT gene reads count, shape 1 × individualNumber
-     * @param controlIPExpectations treatment IP gene reads count expectation, shape 1 × individualNumber
-     * @param controlINPUTExpectations treatment INPUT gene reads count expectation, shape 1 × individualNumber
-     * @param treatmentIPExpectations control IP gene reads count expectation, shape 1 × individualNumber
-     * @param treatmentINPUTExpectations control INPUT gene reads count expectation, shape 1 × individualNumber
-     */
-    public void setTreatmentControlGeneReads(int[] treatmentIPReads, int[] treatmentINPUTReads,
-                                             int[] controlIPReads, int[] controlINPUTReads,
-                                             int[] treatmentIPNonPeakReads, int[] treatmentINPUTNonPeakReads,
-                                             int[] controlIPNonPeakReads, int[] controlINPUTNonPeakReads,
-                                             double[] treatmentIPExpectations, double[] treatmentINPUTExpectations,
-                                             double[] controlIPExpectations, double[] controlINPUTExpectations,
-                                             double[] treatmentIPNonPeakExpect, double[] treatmentINPUTNonPeakExpect,
-                                             double[] controlIPNonPeakExpect, double[] controlINPUTNonPeakExpect) {
-        this.individualNumber = treatmentIPReads.length;
-
-        this.treatmentIPReads = new int[this.individualNumber];
-        System.arraycopy(treatmentIPReads, 0, this.treatmentIPReads, 0, this.individualNumber);
-        this.treatmentINPUTReads = new int[this.individualNumber];
-        System.arraycopy(treatmentINPUTReads, 0, this.treatmentINPUTReads, 0, this.individualNumber);
-        this.controlIPReads = new int[this.individualNumber];
-        System.arraycopy(controlIPReads, 0, this.controlIPReads, 0, this.individualNumber);
-        this.controlINPUTReads = new int[this.individualNumber];
-        System.arraycopy(controlINPUTReads, 0, this.controlINPUTReads, 0, this.individualNumber);
-        this.treatmentIPNonPeakReads = new int[this.individualNumber];
-        System.arraycopy(treatmentIPNonPeakReads, 0, this.treatmentIPNonPeakReads, 0, this.individualNumber);
-        this.treatmentINPUTNonPeakReads = new int[this.individualNumber];
-        System.arraycopy(treatmentINPUTNonPeakReads, 0, this.treatmentINPUTNonPeakReads, 0, this.individualNumber);
-        this.controlIPNonPeakReads = new int[this.individualNumber];
-        System.arraycopy(controlIPNonPeakReads, 0, this.controlIPNonPeakReads, 0, this.individualNumber);
-        this.controlINPUTNonPeakReads = new int[this.individualNumber];
-        System.arraycopy(controlINPUTNonPeakReads, 0, this.controlINPUTNonPeakReads, 0, this.individualNumber);
-
-        this.treatmentIPExpectations = new double[this.individualNumber];
-        System.arraycopy(treatmentIPExpectations, 0, this.treatmentIPExpectations, 0, this.individualNumber);
-        this.treatmentINPUTExpectations = new double[this.individualNumber];
-        System.arraycopy(treatmentINPUTExpectations, 0, this.treatmentINPUTExpectations, 0, this.individualNumber);
-        this.controlIPExpectations = new double[this.individualNumber];
-        System.arraycopy(controlIPExpectations, 0, this.controlIPExpectations, 0, this.individualNumber);
-        this.controlINPUTExpectations = new double[this.individualNumber];
-        System.arraycopy(controlINPUTExpectations, 0, this.controlINPUTExpectations, 0, this.individualNumber);
-        this.treatmentIPNonPeakExpect = new double[this.individualNumber];
-        System.arraycopy(treatmentIPNonPeakExpect, 0, this.treatmentIPNonPeakExpect, 0, this.individualNumber);
-        this.treatmentINPUTNonPeakExpect = new double[this.individualNumber];
-        System.arraycopy(treatmentINPUTNonPeakExpect, 0, this.treatmentINPUTNonPeakExpect, 0, this.individualNumber);
-        this.controlIPNonPeakExpect = new double[this.individualNumber];
-        System.arraycopy(controlIPNonPeakExpect, 0, this.controlIPNonPeakExpect, 0, this.individualNumber);
-        this.controlINPUTNonPeakExpect = new double[this.individualNumber];
-        System.arraycopy(controlINPUTNonPeakExpect, 0, this.controlINPUTNonPeakExpect, 0, this.individualNumber);
-    }
-
-    /**
-     * set sampling result list for a single gene
-     * @param treatmentIPOverdispersion treatment IP overdispersion sampling list, shape 1 × samplingNumber
-     * @param treatmentINPUTOverdispersion treatment INPUT overdispersion sampling list, shape 1 × samplingNumber
-     * @param controlIPOverdispersion control IP overdispersion sampling list, shape 1 × samplingNumber
-     * @param controlINPUTOverdispersion control INPUT overdispersion sampling list, shape 1 × samplingNumber
-     * @param treatmentBkgExp treatment background expression sampling list, shape 1 × samplingNumber
-     * @param controlBkgExp control background expression sampling list, shape 1 × samplingNumber
-     * @param treatmentMethylationLevel treatment methylation level sampling list, shape 1 × samplingNumber
-     * @param controlMethylationLevel control methylation level sampling list, shape 1 × samplingNumber
-     */
-    public void setSamplingList(double[]treatmentIPOverdispersion, double[] treatmentINPUTOverdispersion, double[] controlIPOverdispersion, double[] controlINPUTOverdispersion,
-                                double[] treatmentBkgExp, double[] controlBkgExp, double[] treatmentNonPeakBkgExp, double[] controlNonPeakBkgExp,
-                                double[] treatmentMethylationLevel, double[] controlMethylationLevel, double[] nonspecificEnrichment) {
-        this.treatmentIPOverdispersion = treatmentIPOverdispersion;
-        this.treatmentINPUTOverdispersion = treatmentINPUTOverdispersion;
-        this.controlIPOverdispersion = controlIPOverdispersion;
-        this.controlINPUTOverdispersion = controlINPUTOverdispersion;
-        this.treatmentBkgExp = treatmentBkgExp;
-        this.treatmentNonPeakBkgExp = treatmentNonPeakBkgExp;
-        this.controlBkgExp = controlBkgExp;
-        this.controlNonPeakBkgExp = controlNonPeakBkgExp;
-        this.treatmentMethylationLevel = treatmentMethylationLevel;
-        this.controlMethylationLevel = controlMethylationLevel;
-        this.nonspecificEnrichment = nonspecificEnrichment;
-
-        this.parameters = new Parameters();
-        this.parameters.setTretINPUTOverdispersion(treatmentINPUTOverdispersion[0]);
-        this.parameters.setTretIPOverdispersion(treatmentIPOverdispersion[0]);
-        this.parameters.setCtrlINPUTOverdispersion(controlINPUTOverdispersion[0]);
-        this.parameters.setCtrlIPOverdispersion(controlIPOverdispersion[0]);
-        this.parameters.setTretMethylation(treatmentMethylationLevel[0]);
-        this.parameters.setCtrlMethylation(controlMethylationLevel[0]);
-        this.parameters.setTretBkgExp(treatmentBkgExp[0]);
-        this.parameters.setTretNonPeakBkgExp(treatmentNonPeakBkgExp[0]);
-        this.parameters.setCtrlBkgExp(controlBkgExp[0]);
-        this.parameters.setCtrlNonPeakBkgExp(controlNonPeakBkgExp[0]);
-        this.parameters.setNonspecificEnrichment(nonspecificEnrichment[0]);
+        this.controlBackgroundExpressionSamplers = controlBackgroundExpressionSampler;
+        this.treatmentBackgroundExpressionSamplers = treatmentBackgroundExpressionSampler;
+        this.expansionEffectSampler = expansionEffectSampler;
+        this.threadNumber = threadNumber;
+        this.tmpDir = tmpDir;
+        this.samplingTime = samplingTime;
+        this.burnIn = burnIn;
+        this.executorService = Executors.newFixedThreadPool(this.threadNumber);
+        this.lock = new ReentrantLock();
     }
 
     /**
      * set sample size factors
      */
-    public void setSizeFactors(double[] tretIPSizeFactors, double[] tretINPUTSizeFactors, double[] tretIPNonPeakSizeFactors, double[] tretINPUTNonPeakSizeFactors,
-                               double[] ctrlIPSizeFactors, double[] ctrlINPUTSizeFactors, double[] ctrlIPNonPeakSizeFactors, double[] ctrlINPUTNonPeakSizeFactors) {
+    public void setSizeFactors(double[] tretIPSizeFactors, double[] tretINPUTSizeFactors,
+                               double[] ctrlIPSizeFactors, double[] ctrlINPUTSizeFactors) {
         this.parameters.setTretIPSizeFactors(tretIPSizeFactors);
         this.parameters.setTretINPUTSizeFactors(tretINPUTSizeFactors);
-        this.parameters.setTretIPNonPeakSizeFactors(tretIPNonPeakSizeFactors);
-        this.parameters.setTretINPUTNonPeakSizeFactors(tretINPUTNonPeakSizeFactors);
         this.parameters.setCtrlIPSizeFactors(ctrlIPSizeFactors);
         this.parameters.setCtrlINPUTSizeFactors(ctrlINPUTSizeFactors);
-        this.parameters.setCtrlIPNonPeakSizeFactors(ctrlIPNonPeakSizeFactors);
-        this.parameters.setCtrlINPUTNonPeakSizeFactors(ctrlINPUTNonPeakSizeFactors);
+    }
+
+    /**
+     * set sampling result list for a single gene
+     * @param treatmentIPOverdispersion treatment IP overdispersion sampling list, shape 1 × samplingTime
+     * @param treatmentINPUTOverdispersion treatment INPUT overdispersion sampling list, shape 1 × samplingTime
+     * @param controlIPOverdispersion control IP overdispersion sampling list, shape 1 × samplingTime
+     * @param controlINPUTOverdispersion control INPUT overdispersion sampling list, shape 1 × samplingTime
+     * @param treatmentBkgExp treatment background expression sampling list, shape 1 × peakNumber
+     * @param controlBkgExp control background expression sampling list, shape 1 × peakNumber
+     * @param treatmentMethylationLevel treatment methylation level sampling list, shape 1 × peakNumber
+     * @param controlMethylationLevel control methylation level sampling list, shape 1 × peakNumber
+     */
+    public void setSamplingList(double[] treatmentIPOverdispersion, double[] treatmentINPUTOverdispersion, double[] controlIPOverdispersion, double[] controlINPUTOverdispersion,
+                                double[] expansionEffect, double[] treatmentBkgExp, double[] controlBkgExp, double[] treatmentMethylationLevel, double[] controlMethylationLevel) {
+        this.parameters = new Parameters();
+        this.parameters.setTretINPUTOverdispersion(treatmentINPUTOverdispersion);
+        this.parameters.setTretIPOverdispersion(treatmentIPOverdispersion);
+        this.parameters.setCtrlINPUTOverdispersion(controlINPUTOverdispersion);
+        this.parameters.setCtrlIPOverdispersion(controlIPOverdispersion);
+        this.parameters.setExpansionEffect(expansionEffect);
+        this.parameters.setTretMethylation(treatmentMethylationLevel);
+        this.parameters.setCtrlMethylation(controlMethylationLevel);
+        this.parameters.setTretBkgExp(treatmentBkgExp);
+        this.parameters.setCtrlBkgExp(controlBkgExp);
+    }
+
+    /**
+     * treatment and control group reads count of a single gene
+     * @param treatmentIPReads treatment IP gene reads count, shape individualNumber × peakNumber
+     * @param treatmentINPUTReads treatment INPUT gene reads count, shape individualNumber × peakNumber
+     * @param controlIPReads control IP gene reads count, shape individualNumber × peakNumber
+     * @param controlINPUTReads control INPUT gene reads count, shape individualNumber × peakNumber
+     */
+    public void setTreatmentControlGeneReads(int[][] treatmentIPReads, int[][] treatmentINPUTReads,
+                                             int[][] controlIPReads, int[][] controlINPUTReads) {
+        this.tretIndividualNumber = treatmentIPReads.length;
+        this.ctrlIndividualNumber = controlIPReads.length;
+        this.peakNumber = treatmentIPReads[0].length;
+        this.treatmentIPReads = treatmentIPReads;
+        this.treatmentINPUTReads = treatmentINPUTReads;
+        this.controlIPReads = controlIPReads;
+        this.controlINPUTReads = controlINPUTReads;
+
+        double[] tretIPSizeFactors = this.parameters.getTretIPSizeFactors();
+        double[] tretINPUTSizeFactors = this.parameters.getTretINPUTSizeFactors();
+        double[] ctrlIPSizeFactors = this.parameters.getCtrlIPSizeFactors();
+        double[] ctrlINPUTSizeFactors = this.parameters.getCtrlINPUTSizeFactors();
+        double[] tretBkgExpressions = this.parameters.getTretBkgExp();
+        double[] ctrlBkgExpressions = this.parameters.getCtrlBkgExp();
+        double[] tretMethylationLevels = this.parameters.getTretMethylation();
+        double[] ctrlMethylationLevels = this.parameters.getCtrlMethylation();
+        double expansion = this.parameters.getExpansionEffect()[0];
+
+        // initial reads expectations
+        this.treatmentIPExpectations = this.calcReadsExpectation(tretBkgExpressions, tretMethylationLevels, expansion, tretIPSizeFactors, false, true);
+        this.treatmentINPUTExpectations = this.calcReadsExpectation(tretBkgExpressions, tretMethylationLevels, expansion, tretINPUTSizeFactors, true, true);
+        this.controlIPExpectations = this.calcReadsExpectation(ctrlBkgExpressions, ctrlMethylationLevels, expansion, ctrlIPSizeFactors, false, false);
+        this.controlINPUTExpectations = this.calcReadsExpectation(ctrlBkgExpressions, ctrlMethylationLevels, expansion, ctrlINPUTSizeFactors, true, false);
+    }
+
+    /**
+     * calculate reads expectations for each peak in each sample
+     * @param expressions expression values, shape 1 × peakNumber
+     * @param methylationLevels methylation values, shape 1 × peakNumber
+     * @param expansion antigen expansion effect
+     * @param sampleSizeFactor sample size factors, shape 1 × individualNumber
+     * @param input true, if calculate INPUT data reads expectation; otherwise, false
+     * @return reads expectations, shape individualNumber × peakNumber
+     */
+    private double[][] calcReadsExpectation(double[] expressions, double[] methylationLevels, double expansion, double[] sampleSizeFactor, boolean input, boolean treatment) {
+        double factor, expression, methylationLevel, readsExpectation;
+        int individualNumber = treatment? this.tretIndividualNumber: this.ctrlIndividualNumber;
+        double[][] expectations = new double[individualNumber][this.peakNumber];
+
+        for (int peakIdx=0; peakIdx<this.peakNumber; peakIdx++) {
+            expression = expressions[peakIdx];
+            methylationLevel = methylationLevels[peakIdx];
+            for (int sampleIdx=0; sampleIdx<individualNumber; sampleIdx++) {
+                factor = sampleSizeFactor[sampleIdx];
+                if (input)
+                    readsExpectation = this.calcExpectation(factor, expression, methylationLevel, expansion);
+                else
+                    readsExpectation = this.calcExpectation(factor, expression, 1, 1);
+                expectations[sampleIdx][peakIdx] = readsExpectation;
+            }
+        }
+
+        return expectations;
+    }
+
+    /**
+     * calculate IP and INPUT reads count expectation
+     * @param sizeFactor size factor
+     * @param expression background expression
+     * @param methylationLevel methylation level
+     * @param expansion expansion effect of antigen
+     * @return reads count expectation
+     */
+    private double calcExpectation(double sizeFactor, double expression, double methylationLevel, double expansion) {
+        return sizeFactor * expansion * expression * methylationLevel;
+    }
+
+    /**
+     * set quantified expansion effect
+     * @param quantifiedExpansionEffect quantified expansion effect
+     */
+    public void setQuantifiedExpansionEffect(double quantifiedExpansionEffect) {
+        this.quantifiedExpansionEffect = quantifiedExpansionEffect;
+        this.specificExpansionEffect = true;
     }
 
     /**
      * an sampling iteration
      * @param time iteration time
      */
-    public double iterate(int time, double logPrevParamsProba, boolean curModel, boolean usePseudoPrior) {
-        logPrevParamsProba = this.treatmentINPUTOverdispersionSampling(time, logPrevParamsProba, curModel, usePseudoPrior);
-        logPrevParamsProba = this.treatmentIPOverdispersionSampling(time, logPrevParamsProba, curModel, usePseudoPrior);
-        logPrevParamsProba = this.controlINPUTOverdispersionSampling(time, logPrevParamsProba, curModel, usePseudoPrior);
-        logPrevParamsProba = this.controlIPOverdispersionSampling(time, logPrevParamsProba, curModel, usePseudoPrior);
-        // skip expression sampling, saving time
-        // logPrevParamsProba = this.treatmentBkgExpSampling(time, logPrevParamsProba, curModel, usePseudoPrior);
-        // logPrevParamsProba = this.controlBkgExpSampling(time, logPrevParamsProba, curModel, usePseudoPrior);
-        // logPrevParamsProba = this.treatmentNonPeakExpSampling(time, logPrevParamsProba, curModel, usePseudoPrior);
-        // logPrevParamsProba = this.controlNonPeakExpSampling(time, logPrevParamsProba, curModel, usePseudoPrior);
-        logPrevParamsProba = this.treatmentMethylationSampling(time, logPrevParamsProba, curModel, usePseudoPrior);
-        logPrevParamsProba = this.controlMethylationSampling(time, logPrevParamsProba, curModel, usePseudoPrior);
-        logPrevParamsProba = this.nonspecificEnrichSampling(time, logPrevParamsProba, curModel, usePseudoPrior);
+    public double iterate(int time, double logPrevParamsProba) {
+        logPrevParamsProba = this.treatmentINPUTOverdispersionSampling(time, logPrevParamsProba);
+        logPrevParamsProba = this.treatmentIPOverdispersionSampling(time, logPrevParamsProba);
+        logPrevParamsProba = this.controlINPUTOverdispersionSampling(time, logPrevParamsProba);
+        logPrevParamsProba = this.controlIPOverdispersionSampling(time, logPrevParamsProba);
+        if (this.specificExpansionEffect)
+            logPrevParamsProba = this.expansionEffectSampling(time, logPrevParamsProba);
+        logPrevParamsProba = this.treatmentBkgExpSampling(time, logPrevParamsProba);
+        logPrevParamsProba = this.controlBkgExpSampling(time, logPrevParamsProba);
+        logPrevParamsProba = this.treatmentMethylationSampling(time, logPrevParamsProba);
+        logPrevParamsProba = this.controlMethylationSampling(time, logPrevParamsProba);
 
         return logPrevParamsProba;
     }
@@ -194,53 +206,45 @@ public abstract class ModelSelection {
      * MH sampling for treatment INPUT overdispersion
      * @param time iteration time
      * @param logPrevParamsProba log-likehood + log-prior
-     * @param curModel true, if M=j; otherwise false
      */
-    private double treatmentINPUTOverdispersionSampling(int time, double logPrevParamsProba, boolean curModel, boolean usePseudoPrior) {
-        double tretINPUTOverdispersion, tretIPOverdispersion, ctrlINPUTOverdispersion, ctrlIPOverdispersion,
-               tretMethLevel, ctrlMethLevel, nonspecificEnrich,
-               tretBkgExp, ctrlBkgExp, tretNonPeakExp, ctrlNonPeakExp, newTretINPUTOverdispersion;
+    private double treatmentINPUTOverdispersionSampling(int time, double logPrevParamsProba) {
+        double tretINPUTOverdispersion, tretIPOverdispersion, ctrlINPUTOverdispersion, ctrlIPOverdispersion, curExpansionEffect,
+               newTretINPUTOverdispersion;
+        // shape 1 × peakNumber
+        double[] tretMethLevel, ctrlMethLevel, tretBkgExp, ctrlBkgExp;
         boolean samplingRes;
         double logCurParamsProba, logLikeProba, logPrior;
 
-        nonspecificEnrich = this.parameters.getNonspecificEnrichment();
+        tretINPUTOverdispersion = this.parameters.getTretINPUTOverdispersion()[time-1];
+        tretIPOverdispersion = this.parameters.getTretIPOverdispersion()[time-1];
+        ctrlINPUTOverdispersion = this.parameters.getCtrlINPUTOverdispersion()[time-1];
+        ctrlIPOverdispersion = this.parameters.getCtrlIPOverdispersion()[time-1];
+        curExpansionEffect = this.specificExpansionEffect? this.quantifiedExpansionEffect: this.parameters.getExpansionEffect()[time-1];
         tretMethLevel = this.parameters.getTretMethylation();
         ctrlMethLevel = this.parameters.getCtrlMethylation();
-        tretINPUTOverdispersion = this.parameters.getTretINPUTOverdispersion();
-        tretIPOverdispersion = this.parameters.getTretIPOverdispersion();
-        ctrlINPUTOverdispersion = this.parameters.getCtrlINPUTOverdispersion();
-        ctrlIPOverdispersion = this.parameters.getCtrlIPOverdispersion();
         tretBkgExp = this.parameters.getTretBkgExp();
         ctrlBkgExp = this.parameters.getCtrlBkgExp();
-        tretNonPeakExp = this.parameters.getTretNonPeakBkgExp();
-        ctrlNonPeakExp = this.parameters.getCtrlNonPeakBkgExp();
         newTretINPUTOverdispersion = this.tretINPUTOverdispersionSampler.randomSample(tretINPUTOverdispersion);
-        if (curModel) {
-            logLikeProba = this.logLikelihood(tretIPOverdispersion, newTretINPUTOverdispersion,
-                                              ctrlIPOverdispersion, ctrlINPUTOverdispersion);
-            logPrior = this.logPriority(tretIPOverdispersion, newTretINPUTOverdispersion,
-                                        ctrlIPOverdispersion, ctrlINPUTOverdispersion,
-                                        tretMethLevel, ctrlMethLevel, nonspecificEnrich,
-                                        tretBkgExp, ctrlBkgExp, tretNonPeakExp, ctrlNonPeakExp);
-            logCurParamsProba = logLikeProba + logPrior;
-        } else {
-            if (!usePseudoPrior) {
-                logPrevParamsProba = this.tretINPUTOverdispersionSampler.getLogDensity(tretINPUTOverdispersion);
-                logCurParamsProba = this.tretINPUTOverdispersionSampler.getLogDensity(newTretINPUTOverdispersion);
-            } else {
-                logPrevParamsProba = this.tretINPUTOverdispersionPseudoSampler.getLogDensity(tretINPUTOverdispersion);
-                logCurParamsProba = this.tretINPUTOverdispersionPseudoSampler.getLogDensity(newTretINPUTOverdispersion);
-            }
-        }
+
+        logLikeProba = this.logLikelihood(tretIPOverdispersion, newTretINPUTOverdispersion,
+                                          ctrlIPOverdispersion, ctrlINPUTOverdispersion);
+        logPrior = this.logPriority(tretIPOverdispersion, newTretINPUTOverdispersion,
+                                    ctrlIPOverdispersion, ctrlINPUTOverdispersion, curExpansionEffect,
+                                    tretMethLevel, ctrlMethLevel, tretBkgExp, ctrlBkgExp);
+        logCurParamsProba = logLikeProba + logPrior;
+
         // if samplingRes is true, means the new sampling value was accepted
         samplingRes = this.mhSampling.getSamplingRes(logCurParamsProba, logPrevParamsProba, true);
+        double[] tretINPUTOverdispersions = this.parameters.getTretINPUTOverdispersion();
         if (samplingRes) {
-            this.parameters.setTretINPUTOverdispersion(newTretINPUTOverdispersion);
-            this.treatmentINPUTOverdispersion[time] = newTretINPUTOverdispersion;
+            tretINPUTOverdispersions[time] = newTretINPUTOverdispersion;
+            this.parameters.setTretINPUTOverdispersion(tretINPUTOverdispersions);
             return logCurParamsProba;
         }
-        else
-            this.treatmentINPUTOverdispersion[time] = tretINPUTOverdispersion;
+        else {
+            tretINPUTOverdispersions[time] = tretINPUTOverdispersion;
+            this.parameters.setTretINPUTOverdispersion(tretINPUTOverdispersions);
+        }
 
         return logPrevParamsProba;
     }
@@ -249,51 +253,44 @@ public abstract class ModelSelection {
      * MH sampling for treatment IP overdispersion
      * @param time iteration time
      */
-    private double treatmentIPOverdispersionSampling(int time, double logPrevParamsProba, boolean curModel, boolean usePseudoPrior) {
-        double tretINPUTOverdispersion, tretIPOverdispersion, ctrlINPUTOverdispersion, ctrlIPOverdispersion,
-               tretMethLevel, ctrlMethLevel, nonspecificEnrich,
-               tretBkgExp, ctrlBkgExp, tretNonPeakExp, ctrlNonPeakExp, newTretIPOverdispersion;
+    private double treatmentIPOverdispersionSampling(int time, double logPrevParamsProba) {
+        double tretINPUTOverdispersion, tretIPOverdispersion, ctrlINPUTOverdispersion, ctrlIPOverdispersion, curExpansionEffect,
+                newTretIPOverdispersion;
+        // shape 1 × peakNumber
+        double[] tretMethLevel, ctrlMethLevel, tretBkgExp, ctrlBkgExp;
         boolean samplingRes;
         double logCurParamsProba, logLikeProba, logPrior;
 
-        nonspecificEnrich = this.parameters.getNonspecificEnrichment();
+        tretINPUTOverdispersion = this.parameters.getTretINPUTOverdispersion()[time];
+        tretIPOverdispersion = this.parameters.getTretIPOverdispersion()[time-1];
+        ctrlINPUTOverdispersion = this.parameters.getCtrlINPUTOverdispersion()[time-1];
+        ctrlIPOverdispersion = this.parameters.getCtrlIPOverdispersion()[time-1];
+        curExpansionEffect = this.specificExpansionEffect? this.quantifiedExpansionEffect: this.parameters.getExpansionEffect()[time-1];
         tretMethLevel = this.parameters.getTretMethylation();
         ctrlMethLevel = this.parameters.getCtrlMethylation();
-        tretINPUTOverdispersion = this.parameters.getTretINPUTOverdispersion();
-        tretIPOverdispersion = this.parameters.getTretIPOverdispersion();
-        ctrlINPUTOverdispersion = this.parameters.getCtrlINPUTOverdispersion();
-        ctrlIPOverdispersion = this.parameters.getCtrlIPOverdispersion();
         tretBkgExp = this.parameters.getTretBkgExp();
         ctrlBkgExp = this.parameters.getCtrlBkgExp();
-        tretNonPeakExp = this.parameters.getTretNonPeakBkgExp();
-        ctrlNonPeakExp = this.parameters.getCtrlNonPeakBkgExp();
         newTretIPOverdispersion = this.tretIPOverdispersionSampler.randomSample(tretIPOverdispersion);
-        if (curModel) {
-            logLikeProba = this.logLikelihood(newTretIPOverdispersion, tretINPUTOverdispersion,
-                                              ctrlIPOverdispersion, ctrlINPUTOverdispersion);
-            logPrior = this.logPriority(newTretIPOverdispersion, tretINPUTOverdispersion,
-                                        ctrlIPOverdispersion, ctrlINPUTOverdispersion,
-                                        tretMethLevel, ctrlMethLevel, nonspecificEnrich,
-                                        tretBkgExp, ctrlBkgExp, tretNonPeakExp, ctrlNonPeakExp);
-            logCurParamsProba = logLikeProba + logPrior;
-        } else {
-            if (!usePseudoPrior) {
-                logPrevParamsProba = this.tretIPOverdispersionSampler.getLogDensity(tretIPOverdispersion);
-                logCurParamsProba = this.tretIPOverdispersionSampler.getLogDensity(newTretIPOverdispersion);
-            } else {
-                logPrevParamsProba = this.tretIPOverdispersionPseudoSampler.getLogDensity(tretIPOverdispersion);
-                logCurParamsProba = this.tretIPOverdispersionPseudoSampler.getLogDensity(newTretIPOverdispersion);
-            }
 
-        }
+        logLikeProba = this.logLikelihood(newTretIPOverdispersion, tretINPUTOverdispersion,
+                                          ctrlIPOverdispersion, ctrlINPUTOverdispersion);
+        logPrior = this.logPriority(newTretIPOverdispersion, tretINPUTOverdispersion,
+                                    ctrlIPOverdispersion, ctrlINPUTOverdispersion, curExpansionEffect,
+                                    tretMethLevel, ctrlMethLevel, tretBkgExp, ctrlBkgExp);
+        logCurParamsProba = logLikeProba + logPrior;
+
         // if samplingRes is true, means the new sampling value was accepted
         samplingRes = this.mhSampling.getSamplingRes(logCurParamsProba, logPrevParamsProba, true);
+        double[] tretIPOverdispersions = this.parameters.getTretIPOverdispersion();
         if (samplingRes) {
-            this.treatmentIPOverdispersion[time] = newTretIPOverdispersion;
-            this.parameters.setTretIPOverdispersion(newTretIPOverdispersion);
+            tretIPOverdispersions[time] = newTretIPOverdispersion;
+            this.parameters.setTretIPOverdispersion(tretIPOverdispersions);
             return logCurParamsProba;
-        } else
-            this.treatmentIPOverdispersion[time] = tretIPOverdispersion;
+        } else {
+            tretIPOverdispersions[time] = tretIPOverdispersion;
+            this.parameters.setTretIPOverdispersion(tretIPOverdispersions);
+        }
+
         return logPrevParamsProba;
     }
 
@@ -301,51 +298,42 @@ public abstract class ModelSelection {
      * MH sampling for control INPUT overdispersion
      * @param time iteration time
      */
-    private double controlINPUTOverdispersionSampling(int time, double logPrevParamsProba, boolean curModel, boolean usePseudoPrior){
-        double tretINPUTOverdispersion, tretIPOverdispersion, ctrlINPUTOverdispersion, ctrlIPOverdispersion,
-               tretMethLevel, ctrlMethLevel, nonspecificEnrich,
-               tretBkgExp, ctrlBkgExp, tretNonPeakExp, ctrlNonPeakExp, newCtrlINPUTOverdispersion;
+    private double controlINPUTOverdispersionSampling(int time, double logPrevParamsProba){
+        double tretINPUTOverdispersion, tretIPOverdispersion, ctrlINPUTOverdispersion, ctrlIPOverdispersion, curExpansionEffect,
+                newCtrlINPUTOverdispersion;
+        // shape 1 × peakNumber
+        double[] tretMethLevel, ctrlMethLevel, tretBkgExp, ctrlBkgExp;
         boolean samplingRes;
         double logCurParamsProba, logLikeProba, logPrior;
 
-        nonspecificEnrich = this.parameters.getNonspecificEnrichment();
+        tretINPUTOverdispersion = this.parameters.getTretINPUTOverdispersion()[time];
+        tretIPOverdispersion = this.parameters.getTretIPOverdispersion()[time];
+        ctrlINPUTOverdispersion = this.parameters.getCtrlINPUTOverdispersion()[time-1];
+        ctrlIPOverdispersion = this.parameters.getCtrlIPOverdispersion()[time-1];
+        curExpansionEffect = this.specificExpansionEffect? this.quantifiedExpansionEffect: this.parameters.getExpansionEffect()[time-1];
         tretMethLevel = this.parameters.getTretMethylation();
         ctrlMethLevel = this.parameters.getCtrlMethylation();
-        tretINPUTOverdispersion = this.parameters.getTretINPUTOverdispersion();
-        tretIPOverdispersion = this.parameters.getTretIPOverdispersion();
-        ctrlINPUTOverdispersion = this.parameters.getCtrlINPUTOverdispersion();
-        ctrlIPOverdispersion = this.parameters.getCtrlIPOverdispersion();
         tretBkgExp = this.parameters.getTretBkgExp();
         ctrlBkgExp = this.parameters.getCtrlBkgExp();
-        tretNonPeakExp = this.parameters.getTretNonPeakBkgExp();
-        ctrlNonPeakExp = this.parameters.getCtrlNonPeakBkgExp();
         newCtrlINPUTOverdispersion = this.ctrlINPUTOverdispersionSampler.randomSample(ctrlINPUTOverdispersion);
-        if (curModel) {
-            logLikeProba = this.logLikelihood(tretIPOverdispersion, tretINPUTOverdispersion,
-                                              ctrlIPOverdispersion, newCtrlINPUTOverdispersion);
-            logPrior = this.logPriority(tretIPOverdispersion, tretINPUTOverdispersion,
-                                        ctrlIPOverdispersion, newCtrlINPUTOverdispersion,
-                                        tretMethLevel, ctrlMethLevel, nonspecificEnrich,
-                                        tretBkgExp, ctrlBkgExp, tretNonPeakExp, ctrlNonPeakExp);
-            logCurParamsProba = logLikeProba + logPrior;
+        logLikeProba = this.logLikelihood(tretIPOverdispersion, tretINPUTOverdispersion,
+                                          ctrlIPOverdispersion, newCtrlINPUTOverdispersion);
+        logPrior = this.logPriority(tretIPOverdispersion, tretINPUTOverdispersion,
+                                    ctrlIPOverdispersion, newCtrlINPUTOverdispersion, curExpansionEffect,
+                                    tretMethLevel, ctrlMethLevel, tretBkgExp, ctrlBkgExp);
+        logCurParamsProba = logLikeProba + logPrior;
 
-        } else {
-            if (!usePseudoPrior) {
-                logPrevParamsProba = this.ctrlINPUTOverdispersionSampler.getLogDensity(ctrlINPUTOverdispersion);
-                logCurParamsProba = this.ctrlINPUTOverdispersionSampler.getLogDensity(newCtrlINPUTOverdispersion);
-            } else {
-                logPrevParamsProba = this.ctrlINPUTOverdispersionPseudoSampler.getLogDensity(ctrlINPUTOverdispersion);
-                logCurParamsProba = this.ctrlINPUTOverdispersionPseudoSampler.getLogDensity(newCtrlINPUTOverdispersion);
-            }
-        }
         // if samplingRes is true, means the new sampling value was accepted
         samplingRes = this.mhSampling.getSamplingRes(logCurParamsProba, logPrevParamsProba, true);
+        double[] ctrlINPUTOverdispersions = this.parameters.getCtrlINPUTOverdispersion();
         if (samplingRes) {
-            this.controlINPUTOverdispersion[time] = newCtrlINPUTOverdispersion;
-            this.parameters.setCtrlINPUTOverdispersion(newCtrlINPUTOverdispersion);
+            ctrlINPUTOverdispersions[time] = newCtrlINPUTOverdispersion;
+            this.parameters.setCtrlINPUTOverdispersion(ctrlINPUTOverdispersions);
             return logCurParamsProba;
-        } else
-            this.controlINPUTOverdispersion[time] = ctrlINPUTOverdispersion;
+        } else {
+            ctrlINPUTOverdispersions[time] = ctrlINPUTOverdispersion;
+            this.parameters.setCtrlINPUTOverdispersion(ctrlINPUTOverdispersions);
+        }
 
         return logPrevParamsProba;
     }
@@ -354,50 +342,87 @@ public abstract class ModelSelection {
      * MH sampling for control IP overdispersion
      * @param time iteration time
      */
-    private double controlIPOverdispersionSampling(int time, double logPrevParamsProba, boolean curModel, boolean usePseudoPrior){
-        double tretINPUTOverdispersion, tretIPOverdispersion, ctrlINPUTOverdispersion, ctrlIPOverdispersion,
-               tretMethLevel, ctrlMethLevel, nonspecificEnrich,
-               tretBkgExp, ctrlBkgExp, tretNonPeakExp, ctrlNonPeakExp, newCtrlIPOverdispersion;
+    private double controlIPOverdispersionSampling(int time, double logPrevParamsProba){
+        double tretINPUTOverdispersion, tretIPOverdispersion, ctrlINPUTOverdispersion, ctrlIPOverdispersion, curExpansionEffect,
+                newCtrlIPOverdispersion;
+        // shape 1 × peakNumber
+        double[] tretMethLevel, ctrlMethLevel, tretBkgExp, ctrlBkgExp;
         boolean samplingRes;
         double logCurParamsProba, logLikeProba, logPrior;
 
-        nonspecificEnrich = this.parameters.getNonspecificEnrichment();
+        tretINPUTOverdispersion = this.parameters.getTretINPUTOverdispersion()[time];
+        tretIPOverdispersion = this.parameters.getTretIPOverdispersion()[time];
+        ctrlINPUTOverdispersion = this.parameters.getCtrlINPUTOverdispersion()[time];
+        ctrlIPOverdispersion = this.parameters.getCtrlIPOverdispersion()[time-1];
+        curExpansionEffect = this.specificExpansionEffect? this.quantifiedExpansionEffect: this.parameters.getExpansionEffect()[time-1];
         tretMethLevel = this.parameters.getTretMethylation();
         ctrlMethLevel = this.parameters.getCtrlMethylation();
-        tretINPUTOverdispersion = this.parameters.getTretINPUTOverdispersion();
-        tretIPOverdispersion = this.parameters.getTretIPOverdispersion();
-        ctrlINPUTOverdispersion = this.parameters.getCtrlINPUTOverdispersion();
-        ctrlIPOverdispersion = this.parameters.getCtrlIPOverdispersion();
         tretBkgExp = this.parameters.getTretBkgExp();
         ctrlBkgExp = this.parameters.getCtrlBkgExp();
-        tretNonPeakExp = this.parameters.getTretNonPeakBkgExp();
-        ctrlNonPeakExp = this.parameters.getCtrlNonPeakBkgExp();
         newCtrlIPOverdispersion = this.ctrlIPOverdispersionSampler.randomSample(ctrlIPOverdispersion);
-        if (curModel) {
-            logLikeProba = this.logLikelihood(tretIPOverdispersion, tretINPUTOverdispersion,
-                                              newCtrlIPOverdispersion, ctrlINPUTOverdispersion);
-            logPrior = this.logPriority(tretIPOverdispersion, tretINPUTOverdispersion,
-                                        newCtrlIPOverdispersion, ctrlINPUTOverdispersion,
-                                        tretMethLevel, ctrlMethLevel, nonspecificEnrich,
-                                        tretBkgExp, ctrlBkgExp, tretNonPeakExp, ctrlNonPeakExp);
-            logCurParamsProba = logLikeProba + logPrior;
-        } else {
-            if (!usePseudoPrior) {
-                logPrevParamsProba = this.ctrlIPOverdispersionSampler.getLogDensity(ctrlIPOverdispersion);
-                logCurParamsProba = this.ctrlIPOverdispersionSampler.getLogDensity(newCtrlIPOverdispersion);
-            } else {
-                logPrevParamsProba = this.ctrlIPOverdispersionPseudoSampler.getLogDensity(ctrlIPOverdispersion);
-                logCurParamsProba = this.ctrlIPOverdispersionPseudoSampler.getLogDensity(newCtrlIPOverdispersion);
-            }
-        }
+        logLikeProba = this.logLikelihood(tretIPOverdispersion, tretINPUTOverdispersion,
+                                          newCtrlIPOverdispersion, ctrlINPUTOverdispersion);
+        logPrior = this.logPriority(tretIPOverdispersion, tretINPUTOverdispersion,
+                                    newCtrlIPOverdispersion, ctrlINPUTOverdispersion, curExpansionEffect,
+                                    tretMethLevel, ctrlMethLevel, tretBkgExp, ctrlBkgExp);
+        logCurParamsProba = logLikeProba + logPrior;
+
         // if samplingRes is true, means the new sampling value was accepted
         samplingRes = this.mhSampling.getSamplingRes(logCurParamsProba, logPrevParamsProba, true);
+        double[] ctrlIPOverdispersions = this.parameters.getCtrlIPOverdispersion();
         if (samplingRes) {
-            this.controlIPOverdispersion[time] = newCtrlIPOverdispersion;
-            this.parameters.setCtrlIPOverdispersion(newCtrlIPOverdispersion);
+            ctrlIPOverdispersions[time] = newCtrlIPOverdispersion;
+            this.parameters.setCtrlIPOverdispersion(ctrlIPOverdispersions);
             return logCurParamsProba;
-        } else
-            this.controlIPOverdispersion[time] = ctrlIPOverdispersion;
+        } else {
+            ctrlIPOverdispersions[time] = ctrlIPOverdispersion;
+            this.parameters.setCtrlIPOverdispersion(ctrlIPOverdispersions);
+        }
+
+        return logPrevParamsProba;
+    }
+
+    /**
+     * MH sampling for control IP overdispersion
+     * @param time iteration time
+     */
+    private double expansionEffectSampling(int time, double logPrevParamsProba){
+        double tretINPUTOverdispersion, tretIPOverdispersion, ctrlINPUTOverdispersion, ctrlIPOverdispersion, curExpansionEffect,
+                newExpansionEffect;
+        // shape 1 × peakNumber
+        double[] tretMethLevel, ctrlMethLevel, tretBkgExp, ctrlBkgExp;
+        boolean samplingRes;
+        double logCurParamsProba, logLikeProba, logPrior;
+
+        tretINPUTOverdispersion = this.parameters.getTretINPUTOverdispersion()[time];
+        tretIPOverdispersion = this.parameters.getTretIPOverdispersion()[time];
+        ctrlINPUTOverdispersion = this.parameters.getCtrlINPUTOverdispersion()[time];
+        ctrlIPOverdispersion = this.parameters.getCtrlIPOverdispersion()[time];
+        curExpansionEffect = this.parameters.getExpansionEffect()[time-1];
+        tretMethLevel = this.parameters.getTretMethylation();
+        ctrlMethLevel = this.parameters.getCtrlMethylation();
+        tretBkgExp = this.parameters.getTretBkgExp();
+        ctrlBkgExp = this.parameters.getCtrlBkgExp();
+        newExpansionEffect = this.ctrlIPOverdispersionSampler.randomSample(curExpansionEffect);
+
+        logLikeProba = this.logLikelihood(tretIPOverdispersion, tretINPUTOverdispersion,
+                                          ctrlIPOverdispersion, ctrlINPUTOverdispersion);
+        logPrior = this.logPriority(tretIPOverdispersion, tretINPUTOverdispersion,
+                                    ctrlIPOverdispersion, ctrlINPUTOverdispersion, newExpansionEffect,
+                                    tretMethLevel, ctrlMethLevel, tretBkgExp, ctrlBkgExp);
+        logCurParamsProba = logLikeProba + logPrior;
+
+        // if samplingRes is true, means the new sampling value was accepted
+        samplingRes = this.mhSampling.getSamplingRes(logCurParamsProba, logPrevParamsProba, true);
+        double[] expansionEffects = this.parameters.getExpansionEffect();
+        if (samplingRes) {
+            expansionEffects[time] = newExpansionEffect;
+            this.parameters.setExpansionEffect(expansionEffects);
+            return logCurParamsProba;
+        } else {
+            expansionEffects[time] = curExpansionEffect;
+            this.parameters.setCtrlIPOverdispersion(expansionEffects);
+        }
 
         return logPrevParamsProba;
     }
@@ -406,503 +431,275 @@ public abstract class ModelSelection {
      * MH sampling for treatment group methylation level
      * @param time iteration time
      */
-    protected abstract double treatmentMethylationSampling(int time, double logPrevParamsProba, boolean curModel, boolean usePseudoPrior);
+    protected abstract double treatmentMethylationSampling(int time, double logPrevParamsProba);
 
     /**
      * MH sampling for control group methylation level
      * @param time iteration time
      */
-    protected abstract double controlMethylationSampling(int time, double logPrevParamsProba, boolean curModel, boolean usePseudoPrior);
+    protected abstract double controlMethylationSampling(int time, double logPrevParamsProba);
 
     /**
      * MH sampling for treatment group background expression
      * @param time iteration time
      */
-    private double treatmentBkgExpSampling(int time, double logPrevParamsProba, boolean curModel, boolean usePseudoPrior) {
-        double tretINPUTOverdispersion, tretIPOverdispersion, ctrlINPUTOverdispersion, ctrlIPOverdispersion,
-               tretMethLevel, ctrlMethLevel, nonspecificEnrich,
-               tretBkgExp, ctrlBkgExp, tretNonPeakExp, ctrlNonPeakExp, newTretBkgExp;
-        boolean samplingRes;
-        double[][] expectationReads;
-        double[] newIPReadsExpectation, newINPUTReadsExpectation;
+    private double treatmentBkgExpSampling(int time, double logPrevParamsProba) {
+        double tretINPUTOverdispersion, tretIPOverdispersion, ctrlINPUTOverdispersion, ctrlIPOverdispersion, curExpansionEffect;
+        // shape 1 × peakNumber
+        double[] tretMethLevel, ctrlMethLevel, tretBkgExp, ctrlBkgExp, newTretBkgExp,
+                 tretIPSizeFactors, tretINPUTSizeFactors;
         double logCurParamsProba, logLikeProba, logPrior;
 
-        nonspecificEnrich = this.parameters.getNonspecificEnrichment();
+        tretINPUTOverdispersion = this.parameters.getTretINPUTOverdispersion()[time];
+        tretIPOverdispersion = this.parameters.getTretIPOverdispersion()[time];
+        ctrlINPUTOverdispersion = this.parameters.getCtrlINPUTOverdispersion()[time];
+        ctrlIPOverdispersion = this.parameters.getCtrlIPOverdispersion()[time];
+        curExpansionEffect = this.specificExpansionEffect? this.quantifiedExpansionEffect: this.parameters.getExpansionEffect()[time];
         tretMethLevel = this.parameters.getTretMethylation();
         ctrlMethLevel = this.parameters.getCtrlMethylation();
-        tretINPUTOverdispersion = this.parameters.getTretINPUTOverdispersion();
-        tretIPOverdispersion = this.parameters.getTretIPOverdispersion();
-        ctrlINPUTOverdispersion = this.parameters.getCtrlINPUTOverdispersion();
-        ctrlIPOverdispersion = this.parameters.getCtrlIPOverdispersion();
         tretBkgExp = this.parameters.getTretBkgExp();
         ctrlBkgExp = this.parameters.getCtrlBkgExp();
-        tretNonPeakExp = this.parameters.getTretNonPeakBkgExp();
-        ctrlNonPeakExp = this.parameters.getCtrlNonPeakBkgExp();
-        newTretBkgExp = this.treatmentBackgroundExpressionSampler.randomSample(tretBkgExp);
-        // renew IP and INPUT reads expectations via new sampling background expression IP and INPUT reads count expectations, shape 1 × individualNumber
-        expectationReads = this.renewReadsExpectationViaBkgExp(true, true, new double[]{tretMethLevel}, new double[]{nonspecificEnrich}, new double[]{newTretBkgExp});
-        newIPReadsExpectation = expectationReads[0];
-        newINPUTReadsExpectation = expectationReads[1];
-        if (curModel) {
-            logLikeProba = this.logLikelihood(newIPReadsExpectation, newINPUTReadsExpectation,
-                                              this.controlIPExpectations, this.controlINPUTExpectations,
-                                              this.treatmentIPNonPeakExpect, this.treatmentINPUTNonPeakExpect,
-                                              this.controlIPNonPeakExpect, this.controlINPUTNonPeakExpect,
-                                              tretIPOverdispersion, tretINPUTOverdispersion,
-                                              ctrlIPOverdispersion, ctrlINPUTOverdispersion);
-            logPrior = this.logPriority(tretIPOverdispersion, tretINPUTOverdispersion,
-                                        ctrlIPOverdispersion, ctrlINPUTOverdispersion,
-                                        tretMethLevel, ctrlMethLevel, nonspecificEnrich,
-                                        newTretBkgExp, ctrlBkgExp, tretNonPeakExp, ctrlNonPeakExp);
-            logCurParamsProba = logLikeProba + logPrior;
+        newTretBkgExp = new double[this.peakNumber];
 
-        } else {
-            if (!usePseudoPrior) {
-                logPrevParamsProba = this.treatmentBackgroundExpressionSampler.getLogDensity(tretBkgExp);
-                logCurParamsProba = this.treatmentBackgroundExpressionSampler.getLogDensity(newTretBkgExp);
-            } else {
-                logPrevParamsProba = this.treatmentBackgroundExpressionPseudoSampler.getLogDensity(tretBkgExp);
-                logCurParamsProba = this.treatmentBackgroundExpressionPseudoSampler.getLogDensity(newTretBkgExp);
+        tretIPSizeFactors = this.parameters.getTretIPSizeFactors();
+        tretINPUTSizeFactors = this.parameters.getTretINPUTSizeFactors();
+
+        CountDownLatch countDownLatch = new CountDownLatch(this.peakNumber);
+        BkgExpSamplingTask taskMaker = ((prevValue, curValue, bkgSampler, idx) -> () -> {
+            try {
+                int[] tretIPReadsCount = new int[this.tretIndividualNumber], tretINPUTReadsCount = new int[this.tretIndividualNumber],
+                        ctrlIPReadsCount = new int[this.ctrlIndividualNumber], ctrlINPUTReadsCount = new int[this.ctrlIndividualNumber];
+                double[] tretIPExpectation = new double[this.tretIndividualNumber], tretINPUTExpectation = new double[this.tretIndividualNumber],
+                        ctrlIPExpectation = new double[this.ctrlIndividualNumber], ctrlINPUTExpectation = new double[this.ctrlIndividualNumber],
+                        newTretIPExpectation, newTretINPUTExpectation;
+                double tretMethValue = tretMethLevel[idx];
+                double prevLogLikelihood, curLogLikelihood, prevLogPrior, curLogPrior, prevLogPosterior, curLogPosterior;
+                boolean samplingRes;
+
+                for (int sampleIdx=0; sampleIdx<this.tretIndividualNumber; sampleIdx++) {
+                    tretIPReadsCount[sampleIdx] = this.treatmentIPReads[sampleIdx][idx];
+                    tretINPUTReadsCount[sampleIdx] = this.treatmentINPUTReads[sampleIdx][idx];
+                    tretIPExpectation[sampleIdx] = this.treatmentIPExpectations[sampleIdx][idx];
+                    tretINPUTExpectation[sampleIdx] = this.treatmentINPUTExpectations[sampleIdx][idx];
+                }
+
+                for (int sampleIdx=0; sampleIdx<this.ctrlIndividualNumber; sampleIdx++) {
+                    ctrlIPReadsCount[sampleIdx] = this.treatmentIPReads[sampleIdx][idx];
+                    ctrlINPUTReadsCount[sampleIdx] = this.treatmentINPUTReads[sampleIdx][idx];
+                    ctrlIPExpectation[sampleIdx] = this.controlIPExpectations[sampleIdx][idx];
+                    ctrlINPUTExpectation[sampleIdx] = this.controlINPUTExpectations[sampleIdx][idx];
+                }
+
+                newTretIPExpectation = this.renewReadsExpectation(tretIPSizeFactors, curExpansionEffect, tretMethValue, curValue, true);
+                newTretINPUTExpectation = this.renewReadsExpectation(tretINPUTSizeFactors, 1, 1, curValue, true);
+
+                prevLogLikelihood = this.singlePeakLogLikelihood(tretIPReadsCount, tretINPUTReadsCount, ctrlIPReadsCount, ctrlINPUTReadsCount,
+                                                                 tretIPExpectation, tretINPUTExpectation, ctrlIPExpectation, ctrlINPUTExpectation,
+                                                                 tretIPOverdispersion, tretINPUTOverdispersion, ctrlIPOverdispersion, ctrlINPUTOverdispersion);
+                prevLogPrior = bkgSampler.getLogDensity(prevValue);
+                prevLogPosterior = prevLogLikelihood + prevLogPrior;
+
+                curLogLikelihood = this.singlePeakLogLikelihood(tretIPReadsCount, tretINPUTReadsCount, ctrlIPReadsCount, ctrlINPUTReadsCount,
+                                                                newTretIPExpectation, newTretINPUTExpectation, ctrlIPExpectation, ctrlINPUTExpectation,
+                                                                tretIPOverdispersion, tretINPUTOverdispersion, ctrlIPOverdispersion, ctrlINPUTOverdispersion);
+                curLogPrior = bkgSampler.getLogDensity(curValue);
+                curLogPosterior = curLogLikelihood + curLogPrior;
+
+                samplingRes = this.mhSampling.getSamplingRes(curLogPosterior, prevLogPosterior, true);
+                this.lock.lock();
+                if (samplingRes) {
+                    newTretBkgExp[idx] = curValue;
+                    for (int i=0; i<this.tretIndividualNumber; i++) {
+                        this.treatmentIPExpectations[i][idx] = newTretIPExpectation[i];
+                        this.treatmentINPUTExpectations[i][idx] = newTretINPUTExpectation[i];
+                    }
+                }
+                else
+                    newTretBkgExp[idx] = prevValue;
+            } catch (Exception e) {
+                e.printStackTrace();
+            } finally {
+                countDownLatch.countDown();
+                this.lock.unlock();
             }
-        }
-        // if samplingRes is true, means the new sampling value was accepted
-        samplingRes = this.mhSampling.getSamplingRes(logCurParamsProba, logPrevParamsProba, true);
-        if (samplingRes) {
-            this.parameters.setTretBkgExp(newTretBkgExp);
-            this.treatmentBkgExp[time] = newTretBkgExp;
-            this.treatmentIPExpectations = newIPReadsExpectation;
-            this.treatmentINPUTExpectations = newINPUTReadsExpectation;
-            return logCurParamsProba;
-        } else
-            this.treatmentBkgExp[time] = tretBkgExp;
+        });
 
-        return logPrevParamsProba;
+        double expression, newExpression;
+        BackgroundExpressionSampler sampler;
+        Runnable runnable;
+        for (int peakIdx=0; peakIdx<this.peakNumber; peakIdx++) {
+            expression = tretBkgExp[peakIdx];
+            sampler = this.treatmentBackgroundExpressionSamplers[peakIdx];
+            newExpression = sampler.randomSample(expression);
+            runnable = taskMaker.createSamplingTask(expression, newExpression, sampler, peakIdx);
+            this.executorService.submit(runnable);
+        }
+        // wait all peaks renew its background expression
+        try {
+            countDownLatch.await();
+        } catch (InterruptedException ie) {
+            ie.printStackTrace();
+            this.executorService.shutdown();
+        }
+
+        logLikeProba = this.logLikelihood(tretIPOverdispersion, tretINPUTOverdispersion,
+                                          ctrlIPOverdispersion, ctrlINPUTOverdispersion);
+        logPrior = this.logPriority(tretIPOverdispersion, tretINPUTOverdispersion,
+                                    ctrlIPOverdispersion, ctrlINPUTOverdispersion, curExpansionEffect,
+                                    tretMethLevel, ctrlMethLevel, newTretBkgExp, ctrlBkgExp);
+        logCurParamsProba = logLikeProba + logPrior;
+
+        this.parameters.setTretBkgExp(newTretBkgExp);
+
+        return logCurParamsProba;
     }
 
     /**
      * MH sampling for control group background expression
      * @param time iteration time
      */
-    private double controlBkgExpSampling(int time, double logPrevParamsProba, boolean curModel, boolean usePseudoPrior) {
-        double tretINPUTOverdispersion, tretIPOverdispersion, ctrlINPUTOverdispersion, ctrlIPOverdispersion,
-               tretMethLevel, ctrlMethLevel, nonspecificEnrich,
-               tretBkgExp, ctrlBkgExp, tretNonPeakExp, ctrlNonPeakExp, newCtrlBkgExp;
-        boolean samplingRes;
-        double[][] expectationReads;
-        double[] newIPReadsExpectation, newINPUTReadsExpectation;
+    private double controlBkgExpSampling(int time, double logPrevParamsProba) {
+        double tretINPUTOverdispersion, tretIPOverdispersion, ctrlINPUTOverdispersion, ctrlIPOverdispersion, curExpansionEffect;
+        // shape 1 × peakNumber
+        double[] tretMethLevel, ctrlMethLevel, tretBkgExp, ctrlBkgExp, newCtrlBkgExp,
+                 ctrlIPSizeFactors, ctrlINPUTSizeFactors;
         double logCurParamsProba, logLikeProba, logPrior;
 
-        nonspecificEnrich = this.parameters.getNonspecificEnrichment();
+        tretINPUTOverdispersion = this.parameters.getTretINPUTOverdispersion()[time];
+        tretIPOverdispersion = this.parameters.getTretIPOverdispersion()[time];
+        ctrlINPUTOverdispersion = this.parameters.getCtrlINPUTOverdispersion()[time];
+        ctrlIPOverdispersion = this.parameters.getCtrlIPOverdispersion()[time];
+        curExpansionEffect = this.specificExpansionEffect? this.quantifiedExpansionEffect: this.parameters.getExpansionEffect()[time];
         tretMethLevel = this.parameters.getTretMethylation();
         ctrlMethLevel = this.parameters.getCtrlMethylation();
-        tretINPUTOverdispersion = this.parameters.getTretINPUTOverdispersion();
-        tretIPOverdispersion = this.parameters.getTretIPOverdispersion();
-        ctrlINPUTOverdispersion = this.parameters.getCtrlINPUTOverdispersion();
-        ctrlIPOverdispersion = this.parameters.getCtrlIPOverdispersion();
         tretBkgExp = this.parameters.getTretBkgExp();
         ctrlBkgExp = this.parameters.getCtrlBkgExp();
-        tretNonPeakExp = this.parameters.getTretNonPeakBkgExp();
-        ctrlNonPeakExp = this.parameters.getCtrlNonPeakBkgExp();
-        newCtrlBkgExp = this.controlBackgroundExpressionSampler.randomSample(ctrlBkgExp);
-        // renew IP and INPUT reads expectations via new sampling background expression IP and INPUT reads count expectations, shape 1 × individualNumber
-        expectationReads = this.renewReadsExpectationViaBkgExp(false, true, new double[]{ctrlMethLevel}, new double[] {nonspecificEnrich}, new double[]{newCtrlBkgExp});
-        newIPReadsExpectation = expectationReads[0];
-        newINPUTReadsExpectation = expectationReads[1];
-        if (curModel) {
-            logLikeProba = this.logLikelihood(this.treatmentIPExpectations, this.treatmentINPUTExpectations,
-                                              newIPReadsExpectation, newINPUTReadsExpectation,
-                                              this.treatmentIPNonPeakExpect, this.treatmentINPUTNonPeakExpect,
-                                              this.controlIPNonPeakExpect, this.controlINPUTNonPeakExpect,
-                                              tretIPOverdispersion, tretINPUTOverdispersion,
-                                              ctrlIPOverdispersion, ctrlINPUTOverdispersion);
-            logPrior = this.logPriority(tretIPOverdispersion, tretINPUTOverdispersion,
-                                        ctrlIPOverdispersion, ctrlINPUTOverdispersion,
-                                        tretMethLevel, ctrlMethLevel, nonspecificEnrich,
-                                        tretBkgExp, newCtrlBkgExp, tretNonPeakExp, ctrlNonPeakExp);
-            logCurParamsProba = logLikeProba + logPrior;
-        } else {
-            if (!usePseudoPrior) {
-                logPrevParamsProba = this.controlBackgroundExpressionSampler.getLogDensity(ctrlBkgExp);
-                logCurParamsProba = this.controlBackgroundExpressionSampler.getLogDensity(newCtrlBkgExp);
-            } else {
-                logPrevParamsProba = this.controlBackgroundExpressionPseudoSampler.getLogDensity(ctrlBkgExp);
-                logCurParamsProba = this.controlBackgroundExpressionPseudoSampler.getLogDensity(newCtrlBkgExp);
-            }
-        }
-        // if samplingRes is true, means the new sampling value was accepted
-        samplingRes = this.mhSampling.getSamplingRes(logCurParamsProba, logPrevParamsProba, true);
-        if (samplingRes) {
-            this.parameters.setCtrlBkgExp(newCtrlBkgExp);
-            this.controlBkgExp[time] = newCtrlBkgExp;
-            this.controlIPExpectations = newIPReadsExpectation;
-            this.controlINPUTExpectations = newINPUTReadsExpectation;
-            return logCurParamsProba;
-        } else
-            this.controlBkgExp[time] = ctrlBkgExp;
+        newCtrlBkgExp = new double[this.peakNumber];
 
-        return logPrevParamsProba;
-    }
-
-    /**
-     * MH sampling for treatment group non-peak region expression
-     * @param time iteration time
-     */
-    private double treatmentNonPeakExpSampling(int time, double logPrevParamsProba, boolean curModel, boolean usePseudoPrior) {
-        double tretINPUTOverdispersion, tretIPOverdispersion, ctrlINPUTOverdispersion, ctrlIPOverdispersion,
-               tretMethLevel, ctrlMethLevel, nonspecificEnrich,
-               tretBkgExp, ctrlBkgExp, tretNonPeakExp, ctrlNonPeakExp, newTretNonPeakExp;
-        boolean samplingRes;
-        double[][] expectationReads;
-        double[] newIPReadsExpectation, newINPUTReadsExpectation;
-        double logCurParamsProba, logLikeProba, logPrior;
-
-        nonspecificEnrich = this.parameters.getNonspecificEnrichment();
-        tretMethLevel = this.parameters.getTretMethylation();
-        ctrlMethLevel = this.parameters.getCtrlMethylation();
-        tretINPUTOverdispersion = this.parameters.getTretINPUTOverdispersion();
-        tretIPOverdispersion = this.parameters.getTretIPOverdispersion();
-        ctrlINPUTOverdispersion = this.parameters.getCtrlINPUTOverdispersion();
-        ctrlIPOverdispersion = this.parameters.getCtrlIPOverdispersion();
-        tretBkgExp = this.parameters.getTretBkgExp();
-        ctrlBkgExp = this.parameters.getCtrlBkgExp();
-        tretNonPeakExp = this.parameters.getTretNonPeakBkgExp();
-        ctrlNonPeakExp = this.parameters.getCtrlNonPeakBkgExp();
-        newTretNonPeakExp = this.treatmentBackgroundExpressionSampler.randomSample(tretNonPeakExp);
-        // renew IP and INPUT reads expectations via new sampling background expression IP and INPUT reads count expectations, shape 1 × individualNumber
-        expectationReads = this.renewReadsExpectationViaBkgExp(true, false, new double[]{tretMethLevel}, new double[]{nonspecificEnrich}, new double[]{newTretNonPeakExp});
-        newIPReadsExpectation = expectationReads[0];
-        newINPUTReadsExpectation = expectationReads[1];
-        if (curModel) {
-            logLikeProba = this.logLikelihood(this.treatmentIPExpectations, this.treatmentINPUTExpectations,
-                                              this.controlIPExpectations, this.controlINPUTExpectations,
-                                              newIPReadsExpectation, newINPUTReadsExpectation,
-                                              this.controlIPNonPeakExpect, this.controlINPUTNonPeakExpect,
-                                              tretIPOverdispersion, tretINPUTOverdispersion,
-                                              ctrlIPOverdispersion, ctrlINPUTOverdispersion);
-            logPrior = this.logPriority(tretIPOverdispersion, tretINPUTOverdispersion,
-                                        ctrlIPOverdispersion, ctrlINPUTOverdispersion,
-                                        tretMethLevel, ctrlMethLevel, nonspecificEnrich,
-                                        tretBkgExp, ctrlBkgExp, newTretNonPeakExp, ctrlNonPeakExp);
-            logCurParamsProba = logLikeProba + logPrior;
-
-        } else {
-            if (!usePseudoPrior) {
-                logPrevParamsProba = this.treatmentNonPeakExpressionSampler.getLogDensity(tretNonPeakExp);
-                logCurParamsProba = this.treatmentNonPeakExpressionSampler.getLogDensity(newTretNonPeakExp);
-            } else {
-                logPrevParamsProba = this.treatmentNonPeakExpressionPseudoSampler.getLogDensity(tretNonPeakExp);
-                logCurParamsProba = this.treatmentNonPeakExpressionPseudoSampler.getLogDensity(newTretNonPeakExp);
-            }
-        }
-        // if samplingRes is true, means the new sampling value was accepted
-        samplingRes = this.mhSampling.getSamplingRes(logCurParamsProba, logPrevParamsProba, true);
-        if (samplingRes) {
-            this.parameters.setTretNonPeakBkgExp(newTretNonPeakExp);
-            this.treatmentNonPeakBkgExp[time] = newTretNonPeakExp;
-            this.treatmentIPNonPeakExpect = newIPReadsExpectation;
-            this.treatmentINPUTNonPeakExpect = newINPUTReadsExpectation;
-            return logCurParamsProba;
-        } else
-            this.treatmentNonPeakBkgExp[time] = tretNonPeakExp;
-
-        return logPrevParamsProba;
-    }
-
-    /**
-     * MH sampling for treatment group non-peak region expression
-     * @param time iteration time
-     */
-    private double controlNonPeakExpSampling(int time, double logPrevParamsProba, boolean curModel, boolean usePseudoPrior) {
-        double tretINPUTOverdispersion, tretIPOverdispersion, ctrlINPUTOverdispersion, ctrlIPOverdispersion,
-               tretMethLevel, ctrlMethLevel, nonspecificEnrich,
-               tretBkgExp, ctrlBkgExp, tretNonPeakExp, ctrlNonPeakExp, newCtrlNonPeakExp;
-        boolean samplingRes;
-        double[][] expectationReads;
-        double[] newIPReadsExpectation, newINPUTReadsExpectation;
-        double logCurParamsProba, logLikeProba, logPrior;
-
-        nonspecificEnrich = this.parameters.getNonspecificEnrichment();
-        tretMethLevel = this.parameters.getTretMethylation();
-        ctrlMethLevel = this.parameters.getCtrlMethylation();
-        tretINPUTOverdispersion = this.parameters.getTretINPUTOverdispersion();
-        tretIPOverdispersion = this.parameters.getTretIPOverdispersion();
-        ctrlINPUTOverdispersion = this.parameters.getCtrlINPUTOverdispersion();
-        ctrlIPOverdispersion = this.parameters.getCtrlIPOverdispersion();
-        tretBkgExp = this.parameters.getTretBkgExp();
-        ctrlBkgExp = this.parameters.getCtrlBkgExp();
-        tretNonPeakExp = this.parameters.getTretNonPeakBkgExp();
-        ctrlNonPeakExp = this.parameters.getCtrlNonPeakBkgExp();
-        newCtrlNonPeakExp = this.treatmentBackgroundExpressionSampler.randomSample(ctrlNonPeakExp);
-        // renew IP and INPUT reads expectations via new sampling background expression IP and INPUT reads count expectations, shape 1 × individualNumber
-        expectationReads = this.renewReadsExpectationViaBkgExp(true, false, new double[]{tretMethLevel}, new double[]{nonspecificEnrich}, new double[]{newCtrlNonPeakExp});
-        newIPReadsExpectation = expectationReads[0];
-        newINPUTReadsExpectation = expectationReads[1];
-        if (curModel) {
-            logLikeProba = this.logLikelihood(this.treatmentIPExpectations, this.treatmentINPUTExpectations,
-                                              this.controlIPExpectations, this.controlINPUTExpectations,
-                                              this.treatmentIPNonPeakExpect, this.treatmentINPUTNonPeakExpect,
-                                              newIPReadsExpectation, newINPUTReadsExpectation,
-                                              tretIPOverdispersion, tretINPUTOverdispersion,
-                                              ctrlIPOverdispersion, ctrlINPUTOverdispersion);
-            logPrior = this.logPriority(tretIPOverdispersion, tretINPUTOverdispersion,
-                                        ctrlIPOverdispersion, ctrlINPUTOverdispersion,
-                                        tretMethLevel, ctrlMethLevel, nonspecificEnrich,
-                                        tretBkgExp, ctrlBkgExp, tretNonPeakExp, newCtrlNonPeakExp);
-            logCurParamsProba = logLikeProba + logPrior;
-
-        } else {
-            if (!usePseudoPrior) {
-                logPrevParamsProba = this.controlNonPeakExpressionSampler.getLogDensity(ctrlNonPeakExp);
-                logCurParamsProba = this.controlNonPeakExpressionSampler.getLogDensity(newCtrlNonPeakExp);
-            } else {
-                logPrevParamsProba = this.controlNonPeakExpressionPseudoSampler.getLogDensity(ctrlNonPeakExp);
-                logCurParamsProba = this.controlNonPeakExpressionPseudoSampler.getLogDensity(newCtrlNonPeakExp);
-            }
-        }
-        // if samplingRes is true, means the new sampling value was accepted
-        samplingRes = this.mhSampling.getSamplingRes(logCurParamsProba, logPrevParamsProba, true);
-        if (samplingRes) {
-            this.parameters.setCtrlNonPeakBkgExp(newCtrlNonPeakExp);
-            this.controlNonPeakBkgExp[time] = newCtrlNonPeakExp;
-            this.treatmentIPNonPeakExpect = newIPReadsExpectation;
-            this.treatmentINPUTNonPeakExpect = newINPUTReadsExpectation;
-            return logCurParamsProba;
-        } else
-            this.controlNonPeakBkgExp[time] = ctrlNonPeakExp;
-
-        return logPrevParamsProba;
-    }
-
-    /**
-     * MH sampling for treatment and control group nonspecific enrichment ratio
-     * @param time iteration time
-     */
-    protected double nonspecificEnrichSampling(int time, double logPrevParamsProba, boolean curModel, boolean usePseudoPrior) {
-        double tretINPUTOverdispersion, tretIPOverdispersion, ctrlINPUTOverdispersion, ctrlIPOverdispersion,
-               tretMethLevel, ctrlMethLevel, nonspecificEnrich,
-               tretBkgExp, ctrlBkgExp, tretNonPeakExp, ctrlNonPeakExp, newNonspecificEnrich;
-        double[][] newExpectations;
-        double[] newTretIPReadsExpectation, newTretIPNonPeakExpectation, newCtrlIPReadsExpectation, newCtrlIPNonPeakExpectation;
-        double[] tretIPSizeFactors, tretINPUTSizeFactors, tretIPNonPeakSizeFactors, tretINPUTNonPeakSizeFactors,
-                 ctrlIPSizeFactors, ctrlINPUTSizeFactors, ctrlIPNonPeakSizeFactors, ctrlINPUTNonPeakSizeFactors;
-        boolean samplingRes;
-        double logCurParamsProba, logLikeProba, logPrior;
-
-        nonspecificEnrich = this.parameters.getNonspecificEnrichment();
-        tretMethLevel = this.parameters.getTretMethylation();
-        ctrlMethLevel = this.parameters.getCtrlMethylation();
-        tretINPUTOverdispersion = this.parameters.getTretINPUTOverdispersion();
-        tretIPOverdispersion = this.parameters.getTretIPOverdispersion();
-        ctrlINPUTOverdispersion = this.parameters.getCtrlINPUTOverdispersion();
-        ctrlIPOverdispersion = this.parameters.getCtrlIPOverdispersion();
-        tretBkgExp = this.parameters.getTretBkgExp();
-        ctrlBkgExp = this.parameters.getCtrlBkgExp();
-        tretNonPeakExp = this.parameters.getTretNonPeakBkgExp();
-        ctrlNonPeakExp = this.parameters.getCtrlNonPeakBkgExp();
-        newNonspecificEnrich = this.nonspecificEnrichSampler.randomSample(nonspecificEnrich);
-        tretIPSizeFactors = this.parameters.getTretIPSizeFactors();
-        tretINPUTSizeFactors = this.parameters.getTretINPUTSizeFactors();
-        tretIPNonPeakSizeFactors = this.parameters.getTretIPNonPeakSizeFactors();
-        tretINPUTNonPeakSizeFactors = this.parameters.getTretINPUTNonPeakSizeFactors();
         ctrlIPSizeFactors = this.parameters.getCtrlIPSizeFactors();
         ctrlINPUTSizeFactors = this.parameters.getCtrlINPUTSizeFactors();
-        ctrlIPNonPeakSizeFactors = this.parameters.getCtrlIPNonPeakSizeFactors();
-        ctrlINPUTNonPeakSizeFactors = this.parameters.getCtrlINPUTNonPeakSizeFactors();
-        // renew IP and INPUT reads expectations via new sampling nonspecific enrichment ratio, shape individualNumber × geneNumber
-        newExpectations = this.renewReadsExpectationViaNonspecificEnrich(true, new double[]{tretMethLevel}, new double[]{newNonspecificEnrich},
-                                                                         tretIPSizeFactors, tretINPUTSizeFactors, tretIPNonPeakSizeFactors, tretINPUTNonPeakSizeFactors);
-        newTretIPReadsExpectation = newExpectations[0];
-        newTretIPNonPeakExpectation = newExpectations[1];
 
-        newExpectations = this.renewReadsExpectationViaNonspecificEnrich(false, new double[]{ctrlMethLevel}, new double[]{newNonspecificEnrich},
-                                                                         ctrlIPSizeFactors, ctrlINPUTSizeFactors, ctrlIPNonPeakSizeFactors, ctrlINPUTNonPeakSizeFactors);
-        newCtrlIPReadsExpectation = newExpectations[0];
-        newCtrlIPNonPeakExpectation = newExpectations[1];
+        CountDownLatch countDownLatch = new CountDownLatch(this.peakNumber);
+        BkgExpSamplingTask taskMaker = ((prevValue, curValue, bkgSampler, idx) -> () -> {
+            try {
+                int[] tretIPReadsCount = new int[this.tretIndividualNumber], tretINPUTReadsCount = new int[this.tretIndividualNumber],
+                        ctrlIPReadsCount = new int[this.ctrlIndividualNumber], ctrlINPUTReadsCount = new int[this.ctrlIndividualNumber];
+                double[] tretIPExpectation = new double[this.tretIndividualNumber], tretINPUTExpectation = new double[this.tretIndividualNumber],
+                        ctrlIPExpectation = new double[this.ctrlIndividualNumber], ctrlINPUTExpectation = new double[this.ctrlIndividualNumber],
+                        newCtrlIPExpectation, newCtrlINPUTExpectation;
+                double ctrlMethValue = ctrlMethLevel[idx];
+                double prevLogLikelihood, curLogLikelihood, prevLogPrior, curLogPrior, prevLogPosterior, curLogPosterior;
+                boolean samplingRes;
 
-        if (curModel) {
-            logLikeProba = this.logLikelihood(newTretIPReadsExpectation, this.treatmentINPUTExpectations,
-                                              newCtrlIPReadsExpectation, this.controlINPUTExpectations,
-                                              newTretIPNonPeakExpectation, this.treatmentINPUTNonPeakExpect,
-                                              newCtrlIPNonPeakExpectation, this.controlINPUTNonPeakExpect,
-                                              tretIPOverdispersion, tretINPUTOverdispersion,
-                                              ctrlIPOverdispersion, ctrlINPUTOverdispersion);
-            logPrior = this.logPriority(tretIPOverdispersion, tretINPUTOverdispersion,
-                                        ctrlIPOverdispersion, ctrlINPUTOverdispersion,
-                                        tretMethLevel, ctrlMethLevel, newNonspecificEnrich,
-                                        tretBkgExp, ctrlBkgExp, tretNonPeakExp, ctrlNonPeakExp);
-            logCurParamsProba = logLikeProba + logPrior;
-        } else {
-            if (!usePseudoPrior) {
-                logPrevParamsProba = this.nonspecificEnrichSampler.getLogDensity(nonspecificEnrich);
-                logCurParamsProba = this.nonspecificEnrichSampler.getLogDensity(newNonspecificEnrich);
-            } else {
-                logPrevParamsProba = this.nonspecificEnrichPseudoSampler.getLogDensity(nonspecificEnrich);
-                logCurParamsProba = this.nonspecificEnrichPseudoSampler.getLogDensity(newNonspecificEnrich);
+                for (int sampleIdx=0; sampleIdx<this.tretIndividualNumber; sampleIdx++) {
+                    tretIPReadsCount[sampleIdx] = this.treatmentIPReads[sampleIdx][idx];
+                    tretINPUTReadsCount[sampleIdx] = this.treatmentINPUTReads[sampleIdx][idx];
+                    tretIPExpectation[sampleIdx] = this.treatmentIPExpectations[sampleIdx][idx];
+                    tretINPUTExpectation[sampleIdx] = this.treatmentINPUTExpectations[sampleIdx][idx];
+                }
+
+                for (int sampleIdx=0; sampleIdx<this.ctrlIndividualNumber; sampleIdx++) {
+                    ctrlIPReadsCount[sampleIdx] = this.treatmentIPReads[sampleIdx][idx];
+                    ctrlINPUTReadsCount[sampleIdx] = this.treatmentINPUTReads[sampleIdx][idx];
+                    ctrlIPExpectation[sampleIdx] = this.controlIPExpectations[sampleIdx][idx];
+                    ctrlINPUTExpectation[sampleIdx] = this.controlINPUTExpectations[sampleIdx][idx];
+                }
+
+                newCtrlIPExpectation = this.renewReadsExpectation(ctrlIPSizeFactors, curExpansionEffect, ctrlMethValue, curValue, false);
+                newCtrlINPUTExpectation = this.renewReadsExpectation(ctrlINPUTSizeFactors, 1, 1, curValue, false);
+
+                prevLogLikelihood = this.singlePeakLogLikelihood(tretIPReadsCount, tretINPUTReadsCount, ctrlIPReadsCount, ctrlINPUTReadsCount,
+                                                                 tretIPExpectation, tretINPUTExpectation, ctrlIPExpectation, ctrlINPUTExpectation,
+                                                                 tretIPOverdispersion, tretINPUTOverdispersion, ctrlIPOverdispersion, ctrlINPUTOverdispersion);
+                prevLogPrior = bkgSampler.getLogDensity(prevValue);
+                prevLogPosterior = prevLogLikelihood + prevLogPrior;
+
+                curLogLikelihood = this.singlePeakLogLikelihood(tretIPReadsCount, tretINPUTReadsCount, ctrlIPReadsCount, ctrlINPUTReadsCount,
+                                                                tretIPExpectation, tretINPUTExpectation, newCtrlIPExpectation, newCtrlINPUTExpectation,
+                                                                tretIPOverdispersion, tretINPUTOverdispersion, ctrlIPOverdispersion, ctrlINPUTOverdispersion);
+                curLogPrior = bkgSampler.getLogDensity(curValue);
+                curLogPosterior = curLogLikelihood + curLogPrior;
+
+                samplingRes = this.mhSampling.getSamplingRes(curLogPosterior, prevLogPosterior, true);
+                this.lock.lock();
+                if (samplingRes) {
+                    newCtrlBkgExp[idx] = curValue;
+                    for (int i=0; i<this.ctrlIndividualNumber; i++) {
+                        this.controlIPExpectations[i][idx] = newCtrlIPExpectation[i];
+                        this.controlINPUTExpectations[i][idx] = newCtrlINPUTExpectation[i];
+                    }
+                }
+                else
+                    newCtrlBkgExp[idx] = prevValue;
+            } catch (Exception e) {
+                e.printStackTrace();
+            } finally {
+                countDownLatch.countDown();
+                this.lock.unlock();
             }
-        }
-        // if samplingRes is true, means the new sampling value was accepted
-        samplingRes = this.mhSampling.getSamplingRes(logCurParamsProba, logPrevParamsProba, true);
-        if (samplingRes) {
-            this.parameters.setNonspecificEnrichment(newNonspecificEnrich);
-            this.nonspecificEnrichment[time] = newNonspecificEnrich;
-            this.treatmentIPExpectations = newTretIPReadsExpectation;
-            this.treatmentIPNonPeakExpect = newTretIPNonPeakExpectation;
-            this.controlIPExpectations = newCtrlIPReadsExpectation;
-            this.controlIPNonPeakExpect = newCtrlIPNonPeakExpectation;
-            return logCurParamsProba;
-        } else
-            this.nonspecificEnrichment[time] = nonspecificEnrich;
+        });
 
-        return logPrevParamsProba;
+        double expression, newExpression;
+        BackgroundExpressionSampler sampler;
+        Runnable runnable;
+        for (int peakIdx=0; peakIdx<this.peakNumber; peakIdx++) {
+            expression = ctrlBkgExp[peakIdx];
+            sampler = this.treatmentBackgroundExpressionSamplers[peakIdx];
+            newExpression = sampler.randomSample(expression);
+            runnable = taskMaker.createSamplingTask(expression, newExpression, sampler, peakIdx);
+            this.executorService.submit(runnable);
+        }
+        // wait all peaks renew its background expression
+        try {
+            countDownLatch.await();
+        } catch (InterruptedException ie) {
+            ie.printStackTrace();
+            this.executorService.shutdown();
+        }
+
+        logLikeProba = this.logLikelihood(tretIPOverdispersion, tretINPUTOverdispersion,
+                                          ctrlIPOverdispersion, ctrlINPUTOverdispersion);
+        logPrior = this.logPriority(tretIPOverdispersion, tretINPUTOverdispersion,
+                                    ctrlIPOverdispersion, ctrlINPUTOverdispersion, curExpansionEffect,
+                                    tretMethLevel, ctrlMethLevel, tretBkgExp, newCtrlBkgExp);
+        logCurParamsProba = logLikeProba + logPrior;
+
+        this.parameters.setCtrlBkgExp(newCtrlBkgExp);
+
+        return logCurParamsProba;
     }
 
     /**
-     * calculate reads expectations via new nonspecific enrichment ratio and methylation level
-     * @param treatment true, if calculate for treatment group; otherwise, for control group
-     * @param methLevel methylation level 1×1
-     * @return reads count expectations, shape 1×individualNumber
+     * calculate reads expectations
+     * @param sampleSizeFactor samples' size factors, shape 1 × individualNumber
+     * @param expansion antigen expansion effect
+     * @param methLevel methylation level
+     * @param bkgExp background expression
+     * @return reads expectations, shape 1 × individualNumber
      */
-    public double[][] renewReadsExpectationViaNonspecificEnrich(boolean treatment, double[] methLevel, double[] nonspecificEnrich,
-                                                                double[] ipSizeFactors, double[] inputSizeFactors,
-                                                                double[] nonPeakIPSizeFactors, double[] nonPeakINPUTSizeFactors) {
-        double[][] newIPReadsExpectation, newIPNonPeakExpectation, newINPUTReadsExpectation, newINPUTNonPeakExpectation;
-        // shape individualNumber × geneNumber
-        int[][] ipReads, inputReads, ipNonpeak, inputNonpeak;
-        if (treatment) {
-            ipReads = this.dataForBkgExpCalculation(this.treatmentIPReads);
-            inputReads = this.dataForBkgExpCalculation(this.treatmentINPUTReads);
-            ipNonpeak = this.dataForBkgExpCalculation(this.treatmentIPNonPeakReads);
-            inputNonpeak = this.dataForBkgExpCalculation(this.treatmentINPUTNonPeakReads);
-        } else {
-            ipReads = this.dataForBkgExpCalculation(this.controlIPReads);
-            inputReads = this.dataForBkgExpCalculation(this.controlINPUTReads);
-            ipNonpeak = this.dataForBkgExpCalculation(this.controlIPNonPeakReads);
-            inputNonpeak = this.dataForBkgExpCalculation(this.controlINPUTNonPeakReads);
+    public double[] renewReadsExpectation(double[] sampleSizeFactor, double expansion, double methLevel,double bkgExp, boolean treatment) {
+        double readsExpectation, factor;
+        int individualNumber = treatment? this.tretIndividualNumber: this.ctrlIndividualNumber;
+        double[] readsExpectations = new double[individualNumber];
+        for (int sampleIdx=0; sampleIdx<individualNumber; sampleIdx++) {
+            factor = sampleSizeFactor[sampleIdx];
+            readsExpectation = this.calcReadsExpectation(factor, bkgExp, methLevel, expansion);
+            readsExpectations[sampleIdx] = readsExpectation;
         }
 
-        ReadsExpectation re = new ReadsExpectation(ipReads, inputReads, ipNonpeak, inputNonpeak, methLevel, nonspecificEnrich);
-        // shape individualNumber × 1
-        newIPReadsExpectation = re.getIPReadsExpectation(ipSizeFactors);
-        newIPNonPeakExpectation = re.getIPNonPeakExpectation(nonPeakIPSizeFactors);
-        newINPUTReadsExpectation = re.getINPUTReadsExpectation(inputSizeFactors);
-        newINPUTNonPeakExpectation = re.getINPUTNonPeakExpectation(nonPeakINPUTSizeFactors);
-
-        double[] newExpectations = new double[this.individualNumber], newNonPeakExpect = new double[this.individualNumber],
-                 newINPUTExpectations = new double[this.individualNumber], newINPUTNonPeakExpect = new double[this.individualNumber];
-        for (int i=0; i<this.individualNumber; i++) {
-            newExpectations[i] = newIPReadsExpectation[i][0];
-            newNonPeakExpect[i] = newIPNonPeakExpectation[i][0];
-            newINPUTExpectations[i] = newINPUTReadsExpectation[i][0];
-            newINPUTNonPeakExpect[i] = newINPUTNonPeakExpectation[i][0];
-        }
-        ipReads = null;
-        inputReads = null;
-        ipNonpeak = null;
-        inputNonpeak = null;
-        newIPReadsExpectation = null;
-        re = null;
-
-        return new double[][] {newExpectations, newNonPeakExpect, newINPUTExpectations, newINPUTNonPeakExpect};
+        return readsExpectations;
     }
 
     /**
-     * calculate reads expectations via new methylation level
-     * @param treatment true, if calculate for treatment group; otherwise, for control group
-     * @param methLevel methylation level 1×1
-     * @return reads count expectations, shape 1×individualNumber
+     * calculate IP and INPUT reads count expectation
+     * @param sizeFactor size factor
+     * @param expression background expression
+     * @param methylationLevel methylation level
+     * @param expansion expansion effect of antigen
+     * @return reads count expectation
      */
-    public double[] renewReadsExpectationViaMethLevel(boolean treatment, double[] methLevel, double[] nonspecificEnrich,
-                                                      double[] ipSizeFactors) {
-        double[][] newIPReadsExpectation;
-        // shape individualNumber × geneNumber
-        int[][] ipReads, inputReads, ipNonpeak, inputNonpeak;
-        if (treatment) {
-            ipReads = this.dataForBkgExpCalculation(this.treatmentIPReads);
-            inputReads = this.dataForBkgExpCalculation(this.treatmentINPUTReads);
-            ipNonpeak = this.dataForBkgExpCalculation(this.treatmentIPNonPeakReads);
-            inputNonpeak = this.dataForBkgExpCalculation(this.treatmentINPUTNonPeakReads);
-        } else {
-            ipReads = this.dataForBkgExpCalculation(this.controlIPReads);
-            inputReads = this.dataForBkgExpCalculation(this.controlINPUTReads);
-            ipNonpeak = this.dataForBkgExpCalculation(this.controlIPNonPeakReads);
-            inputNonpeak = this.dataForBkgExpCalculation(this.controlINPUTNonPeakReads);
-        }
-
-        ReadsExpectation re = new ReadsExpectation(ipReads, inputReads, ipNonpeak, inputNonpeak, methLevel, nonspecificEnrich);
-        // shape individualNumber × 1
-        newIPReadsExpectation = re.getIPReadsExpectation(ipSizeFactors);
-
-        double[] newExpectations = new double[this.individualNumber];
-        for (int i=0; i<this.individualNumber; i++) {
-            newExpectations[i] = newIPReadsExpectation[i][0];
-        }
-        ipReads = null;
-        inputReads = null;
-        newIPReadsExpectation = null;
-        re = null;
-
-        return newExpectations;
-    }
-
-    /**
-     * calculate reads expectations via methylation level
-     * @param treatment true, if calculate for treatment group; otherwise, for control group
-     * @param bkgExp background expression 1×1
-     * @return reads count expectations, shape 1×individualNumber
-     */
-    private double[][] renewReadsExpectationViaBkgExp(boolean treatment, boolean inPeak, double[] methLevel, double[] nonspecificEnrich,double[] bkgExp) {
-
-        double[][] newIPReadsExpectation, newINPUTReadsExpectation;
-        int[][] ipReads, inputReads, ipNonpeak, inputNonpeak;
-        if (treatment) {
-            ipReads = this.dataForBkgExpCalculation(this.treatmentIPReads);
-            inputReads = this.dataForBkgExpCalculation(this.treatmentINPUTReads);
-            ipNonpeak = this.dataForBkgExpCalculation(this.treatmentIPNonPeakReads);
-            inputNonpeak = this.dataForBkgExpCalculation(this.treatmentINPUTNonPeakReads);
-        } else {
-            ipReads = this.dataForBkgExpCalculation(this.controlIPReads);
-            inputReads = this.dataForBkgExpCalculation(this.controlINPUTReads);
-            ipNonpeak = this.dataForBkgExpCalculation(this.controlIPNonPeakReads);
-            inputNonpeak = this.dataForBkgExpCalculation(this.controlINPUTNonPeakReads);
-        }
-
-        ReadsExpectation re = new ReadsExpectation(ipReads, inputReads, ipNonpeak, inputNonpeak, methLevel, nonspecificEnrich, bkgExp, inPeak);
-        // shape individualNumber × 1
-        if (inPeak) {
-            newIPReadsExpectation = re.getIPReadsExpectation();
-            newINPUTReadsExpectation = re.getINPUTReadsExpectation();
-        } else {
-            newIPReadsExpectation = re.getIPNonPeakExpectation();
-            newINPUTReadsExpectation = re.getINPUTNonPeakExpectation();
-        }
-
-
-        double[] ipExpectations = new double[this.individualNumber], inputExpectations = new double[this.individualNumber];
-        for (int i=0; i<this.individualNumber; i++) {
-            ipExpectations[i] = newIPReadsExpectation[i][0];
-            inputExpectations[i] = newINPUTReadsExpectation[i][0];
-        }
-        ipReads = null;
-        inputReads = null;
-        newIPReadsExpectation = null;
-        newINPUTReadsExpectation = null;
-        re = null;
-
-        return new double[][] {ipExpectations, inputExpectations};
-    }
-
-    /**
-     * data preparation for reads expectation calculation
-     * @param readsCount shape 1 × individualNumber, will be transformed to individualNumber × 1
-     * @return data for expectation
-     */
-    private int[][] dataForBkgExpCalculation(int[] readsCount) {
-        int[][] data = new int[readsCount.length][1];
-        for (int i=0; i<readsCount.length; i++) {
-            data[i][0] = readsCount[i];
-        }
-
-        return data;
+    private double calcReadsExpectation(double sizeFactor, double expression, double methylationLevel, double expansion) {
+        return sizeFactor * expansion * expression * methylationLevel;
     }
 
     /**
@@ -921,19 +718,31 @@ public abstract class ModelSelection {
      */
     protected double logLikelihood(double treatmentIPOverdispersion, double treatmentINPUTOverdispersion,
                                    double controlIPOverdispersion, double controlINPUTOverdispersion) {
-        double proba = 0, logTretIPProba, logTretINPUTProba, logCtrlIPProba, logCtrlINPUTProba,
-               logTretIPNonPeakProba, logTretINPUTNonPeakProba, logCtrlIPNonPeakProba, logCtrlINPUTNonPeakProba;
-        logTretIPProba = ProbabilityCalculator.logNegativeProbability(this.treatmentIPReads, this.treatmentIPExpectations, treatmentIPOverdispersion);
-        logTretINPUTProba = ProbabilityCalculator.logNegativeProbability(this.treatmentINPUTReads, this.treatmentINPUTExpectations, treatmentINPUTOverdispersion);
-        logCtrlINPUTProba = ProbabilityCalculator.logNegativeProbability(this.controlINPUTReads, this.controlINPUTExpectations, controlINPUTOverdispersion);
-        logCtrlIPProba = ProbabilityCalculator.logNegativeProbability(this.controlIPReads, this.controlIPExpectations, controlIPOverdispersion);
-        logTretIPNonPeakProba = ProbabilityCalculator.logNegativeProbability(this.treatmentIPNonPeakReads, this.treatmentIPNonPeakExpect, treatmentIPOverdispersion);
-        logTretINPUTNonPeakProba = ProbabilityCalculator.logNegativeProbability(this.treatmentINPUTNonPeakReads, this.treatmentINPUTNonPeakExpect, treatmentINPUTOverdispersion);
-        logCtrlIPNonPeakProba = ProbabilityCalculator.logNegativeProbability(this.controlIPNonPeakReads, this.controlIPNonPeakExpect, controlIPOverdispersion);
-        logCtrlINPUTNonPeakProba = ProbabilityCalculator.logNegativeProbability(this.controlINPUTNonPeakReads, this.controlINPUTNonPeakExpect, controlINPUTOverdispersion);
+        double proba = 0;
+        // shape 1 × individualNumber
+        int[] tretIPReadsCount = new int[this.tretIndividualNumber], tretINPUTReadsCount = new int[this.tretIndividualNumber],
+              ctrlIPReadsCount = new int[this.ctrlIndividualNumber], ctrlINPUTReadsCount = new int[this.ctrlIndividualNumber];
+        double[] tretIPExpectation = new double[this.tretIndividualNumber], tretINPUTExpectation = new double[this.tretIndividualNumber],
+                 ctrlIPExpectation = new double[this.ctrlIndividualNumber], ctrlINPUTExpectation = new double[this.ctrlIndividualNumber];
 
-        proba += logTretIPProba + logTretINPUTProba + logCtrlIPProba + logCtrlINPUTProba +
-                 logTretIPNonPeakProba + logTretINPUTNonPeakProba + logCtrlIPNonPeakProba + logCtrlINPUTNonPeakProba;
+        for (int peakIdx=0; peakIdx<this.peakNumber; peakIdx++) {
+            for (int sampleIdx=0; sampleIdx<this.tretIndividualNumber; sampleIdx++) {
+                tretIPReadsCount[sampleIdx] = this.treatmentIPReads[sampleIdx][peakIdx];
+                tretINPUTReadsCount[sampleIdx] = this.treatmentINPUTReads[sampleIdx][peakIdx];
+                tretIPExpectation[sampleIdx] = this.treatmentIPExpectations[sampleIdx][peakIdx];
+                tretINPUTExpectation[sampleIdx] = this.treatmentINPUTExpectations[sampleIdx][peakIdx];
+            }
+
+            for (int sampleIdx=0; sampleIdx<this.ctrlIndividualNumber; sampleIdx++) {
+                ctrlIPReadsCount[sampleIdx] = this.controlIPReads[sampleIdx][peakIdx];
+                ctrlINPUTReadsCount[sampleIdx] = this.controlINPUTReads[sampleIdx][peakIdx];
+                ctrlIPExpectation[sampleIdx] = this.controlIPExpectations[sampleIdx][peakIdx];
+                ctrlINPUTExpectation[sampleIdx] = this.controlINPUTExpectations[sampleIdx][peakIdx];
+            }
+            proba += this.singlePeakLogLikelihood(tretIPReadsCount, tretINPUTReadsCount, ctrlIPReadsCount, ctrlINPUTReadsCount,
+                                                  tretIPExpectation, tretINPUTExpectation, ctrlIPExpectation, ctrlINPUTExpectation,
+                                                  treatmentIPOverdispersion, treatmentINPUTOverdispersion, controlIPOverdispersion, controlINPUTOverdispersion);
+        }
 
         return proba;
     }
@@ -952,173 +761,317 @@ public abstract class ModelSelection {
      * @param controlIPOverdispersion control group IP reads count overdispersion of a gene
      * @param controlINPUTOverdispersion control group INPUT reads count overdispersion of a gene
      */
-    public double logLikelihood(double[] treatmentIPExpectations, double[] treatmentINPUTExpectations,
-                                double[] controlIPExpectations, double[] controlINPUTExpectations,
-                                double[] treatmentIPNonPeakExpect, double[] treatmentINPUTNonPeakExpect,
-                                double[] controlIPNonPeakExpect, double[] controlINPUTNonPeakExpect,
+    public double logLikelihood(double[][] treatmentIPExpectations, double[][] treatmentINPUTExpectations,
+                                double[][] controlIPExpectations, double[][] controlINPUTExpectations,
                                 double treatmentIPOverdispersion, double treatmentINPUTOverdispersion,
                                 double controlIPOverdispersion, double controlINPUTOverdispersion) {
         double proba = 0;
-        proba += ProbabilityCalculator.logNegativeProbability(this.treatmentIPReads, treatmentIPExpectations, treatmentIPOverdispersion);
-        proba += ProbabilityCalculator.logNegativeProbability(this.treatmentINPUTReads, treatmentINPUTExpectations, treatmentINPUTOverdispersion);
-        proba += ProbabilityCalculator.logNegativeProbability(this.controlINPUTReads, controlINPUTExpectations, controlINPUTOverdispersion);
-        proba += ProbabilityCalculator.logNegativeProbability(this.controlIPReads, controlIPExpectations, controlIPOverdispersion);
-        proba += ProbabilityCalculator.logNegativeProbability(this.treatmentIPNonPeakReads, treatmentIPNonPeakExpect, treatmentIPOverdispersion);
-        proba += ProbabilityCalculator.logNegativeProbability(this.treatmentINPUTNonPeakReads, treatmentINPUTNonPeakExpect, treatmentINPUTOverdispersion);
-        proba += ProbabilityCalculator.logNegativeProbability(this.controlIPNonPeakReads, controlIPNonPeakExpect, controlIPOverdispersion);
-        proba += ProbabilityCalculator.logNegativeProbability(this.controlINPUTNonPeakReads, controlINPUTNonPeakExpect, controlINPUTOverdispersion);
+        // shape 1 × individualNumber
+        int[] tretIPReadsCount = new int[this.tretIndividualNumber], tretINPUTReadsCount = new int[this.tretIndividualNumber],
+              ctrlIPReadsCount = new int[this.ctrlIndividualNumber], ctrlINPUTReadsCount = new int[this.ctrlIndividualNumber];
+        double[] tretIPExpectation = new double[this.tretIndividualNumber], tretINPUTExpectation = new double[this.tretIndividualNumber],
+                 ctrlIPExpectation = new double[this.ctrlIndividualNumber], ctrlINPUTExpectation = new double[this.ctrlIndividualNumber];
+        for (int peakIdx=0; peakIdx<this.peakNumber; peakIdx++) {
+            for (int sampleIdx=0; sampleIdx<this.tretIndividualNumber; sampleIdx++) {
+                tretIPReadsCount[sampleIdx] = this.treatmentIPReads[sampleIdx][peakIdx];
+                tretINPUTReadsCount[sampleIdx] = this.treatmentINPUTReads[sampleIdx][peakIdx];
+                tretIPExpectation[sampleIdx] = treatmentIPExpectations[sampleIdx][peakIdx];
+                tretINPUTExpectation[sampleIdx] = treatmentINPUTExpectations[sampleIdx][peakIdx];
+            }
+
+            for (int sampleIdx=0; sampleIdx<this.ctrlIndividualNumber; sampleIdx++) {
+                ctrlIPReadsCount[sampleIdx] = this.controlIPReads[sampleIdx][peakIdx];
+                ctrlINPUTReadsCount[sampleIdx] = this.controlINPUTReads[sampleIdx][peakIdx];
+                ctrlIPExpectation[sampleIdx] = controlIPExpectations[sampleIdx][peakIdx];
+                ctrlINPUTExpectation[sampleIdx] = controlINPUTExpectations[sampleIdx][peakIdx];
+            }
+            proba += this.singlePeakLogLikelihood(tretIPReadsCount, tretINPUTReadsCount, ctrlIPReadsCount, ctrlINPUTReadsCount,
+                                                  tretIPExpectation, tretINPUTExpectation, ctrlIPExpectation, ctrlINPUTExpectation,
+                                                  treatmentIPOverdispersion, treatmentINPUTOverdispersion, controlIPOverdispersion, controlINPUTOverdispersion);
+        }
+
+        return proba;
+    }
+
+    /**
+     * log likelihood for a single peak region
+     * @param tretIPReadsCount treatment IP reads count, shape 1 × individualNumber
+     * @param tretINPUTReadsCount treatment INPUT reads count, shape 1 × individualNumber
+     * @param ctrlIPReadsCount control IP reads count, shape 1 × individualNumber
+     * @param ctrlINPUTReadsCount control INPUT reads count, shape 1 × individualNumber
+     * @param tretIPExpectation treatment IP reads expectation, shape 1 × individualNumber
+     * @param tretINPUTExpectation treatment INPUT reads expectation, shape 1 × individualNumber
+     * @param ctrlIPExpectation control IP reads expectation, shape 1 × individualNumber
+     * @param ctrlINPUTExpectation control INPUT reads expectation, shape 1 × individualNumber
+     * @param treatmentIPOverdispersion treatment IP overdispersion
+     * @param treatmentINPUTOverdispersion treatment INPUT overdispersion
+     * @param controlIPOverdispersion control IP overdispersion
+     * @param controlINPUTOverdispersion control INPUT overdispersion
+     * @return log likelihood for a single peak
+     */
+    public double singlePeakLogLikelihood(int[] tretIPReadsCount, int[] tretINPUTReadsCount, int[] ctrlIPReadsCount, int[] ctrlINPUTReadsCount,
+                                          double[] tretIPExpectation, double[] tretINPUTExpectation, double[] ctrlIPExpectation, double[] ctrlINPUTExpectation,
+                                          double treatmentIPOverdispersion, double treatmentINPUTOverdispersion,  double controlIPOverdispersion, double controlINPUTOverdispersion) {
+        double proba = 0;
+        proba += ProbabilityCalculator.logNegativeProbability(tretIPReadsCount, tretIPExpectation, treatmentIPOverdispersion);
+        proba += ProbabilityCalculator.logNegativeProbability(tretINPUTReadsCount, tretINPUTExpectation, treatmentINPUTOverdispersion);
+        proba += ProbabilityCalculator.logNegativeProbability(ctrlIPReadsCount, ctrlIPExpectation, controlINPUTOverdispersion);
+        proba += ProbabilityCalculator.logNegativeProbability(ctrlINPUTReadsCount, ctrlINPUTExpectation, controlIPOverdispersion);
 
         return proba;
     }
 
     /**
      * parameters logarithm prior probability
-     *      log-gamma(tret_ip_overdispersion) + log-gamma(tret_input_overdispersion) +
-     *      log-gamma(ctrl_ip_overdispersion) + log-gamma(ctrl_input_overdispersion) +
-     *      log-beta(tret_methylation_level) + log-beta(ctrl_methylation_level) +
-     *      log-normal(tret_bkg_exp) + log-normal(ctrl_bkg_exp)
      * @param treatmentIPOverdispersion treatment group IP reads count overdispersion of a gene
      * @param treatmentINPUTOverdispersion treatment group INPUT reads count overdispersion of a gene
      * @param controlIPOverdispersion control group IP reads count overdispersion of a gene
      * @param controlINPUTOverdispersion control group INPUT reads count overdispersion of a gene
-     * @param treatmentMethylationLevel methylation level of a treatment group gene
-     * @param controlMethylationLevel methylation level of a control group gene
-     * @param treatmentBackgroundExpression background expression of a gene in treatment group
-     * @param controlBackgroundExpression background expression of a gene in control group
+     * @param treatmentMethylationLevel methylation level of a treatment group gene, shape 1 × peakNumber
+     * @param controlMethylationLevel methylation level of a control group gene, shape 1 × peakNumber
+     * @param treatmentBackgroundExpression background expression of a gene in treatment group, shape 1 × peakNumber
+     * @param controlBackgroundExpression background expression of a gene in control group, shape 1 × peakNumber
      * @return logarithm prior probability
      */
     public abstract double logPriority(double treatmentIPOverdispersion, double treatmentINPUTOverdispersion,
                                        double controlIPOverdispersion, double controlINPUTOverdispersion,
-                                       double treatmentMethylationLevel, double controlMethylationLevel,
-                                       double nonspecificEnrich,
-                                       double treatmentBackgroundExpression, double controlBackgroundExpression,
-                                       double treatmentNonPeakExpression, double controlNonPeakExpression);
-
-    /**
-     * model parameters prior probability in pseudo distribution
-     * @return pseudo prior probability
-     */
-    protected abstract double paramsPseudoDistributionProbability(boolean usePseudoPrior);
+                                       double expansionEffect, double[] treatmentMethylationLevel, double[] controlMethylationLevel,
+                                       double[] treatmentBackgroundExpression, double[] controlBackgroundExpression);
 
     /**
      * calculate log-posterior = log-likelihood + log-prior at the end of an iteration
      * @return log-posterior
      */
-    public double paramsLogFullConditionalProbability() {
-        double tretINPUTOverdispersion, tretIPOverdispersion, ctrlINPUTOverdispersion, ctrlIPOverdispersion,
-               tretMethLevel, ctrlMethLevel, nonspecificEnrich,
-               tretBkgExp, ctrlBkgExp, tretNonPeakExp, ctrlNonPeakExp;
+    public double paramsLogFullConditionalProbability(int time) {
+        // shape 1 × peakNumber
+        double[] tretMethLevel, ctrlMethLevel, tretBkgExp, ctrlBkgExp;
+        double tretINPUTOverdispersion, tretIPOverdispersion, ctrlINPUTOverdispersion, ctrlIPOverdispersion, expansionEffect;
 
-        nonspecificEnrich = this.parameters.getNonspecificEnrichment();
         tretMethLevel = this.parameters.getTretMethylation();
         ctrlMethLevel = this.parameters.getCtrlMethylation();
-        tretINPUTOverdispersion = this.parameters.getTretINPUTOverdispersion();
-        tretIPOverdispersion = this.parameters.getTretIPOverdispersion();
-        ctrlINPUTOverdispersion = this.parameters.getCtrlINPUTOverdispersion();
-        ctrlIPOverdispersion = this.parameters.getCtrlIPOverdispersion();
         tretBkgExp = this.parameters.getTretBkgExp();
         ctrlBkgExp = this.parameters.getCtrlBkgExp();
-        tretNonPeakExp = this.parameters.getTretNonPeakBkgExp();
-        ctrlNonPeakExp = this.parameters.getCtrlNonPeakBkgExp();
+
+        tretINPUTOverdispersion = this.parameters.getTretINPUTOverdispersion()[time];
+        tretIPOverdispersion = this.parameters.getTretIPOverdispersion()[time];
+        ctrlINPUTOverdispersion = this.parameters.getCtrlINPUTOverdispersion()[time];
+        ctrlIPOverdispersion = this.parameters.getCtrlIPOverdispersion()[time];
+        expansionEffect = this.parameters.getExpansionEffect()[time];
 
         double logLike= this.logLikelihood(tretIPOverdispersion, tretINPUTOverdispersion, ctrlIPOverdispersion, ctrlINPUTOverdispersion);
         double prior = this.logPriority(tretIPOverdispersion, tretINPUTOverdispersion, ctrlIPOverdispersion, ctrlINPUTOverdispersion,
-                                        tretMethLevel, ctrlMethLevel, nonspecificEnrich,
-                                        tretBkgExp, ctrlBkgExp, tretNonPeakExp, ctrlNonPeakExp);
+                                        expansionEffect, tretMethLevel, ctrlMethLevel, tretBkgExp, ctrlBkgExp);
         return logLike + prior;
     }
 
     /**
-     * record current iteration sampling parameters
+     * renew sampling files for each peak
      */
-    public void recordCurrentIterationParams() {
-        if (this.tretIPOverdispersionList == null)
-            this.tretIPOverdispersionList = new ArrayList<>();
-        this.tretIPOverdispersionList.add(this.parameters.getTretIPOverdispersion());
-        if (this.tretINPUTOverdispersionList == null)
-            this.tretINPUTOverdispersionList = new ArrayList<>();
-        this.tretINPUTOverdispersionList.add(this.parameters.getTretINPUTOverdispersion());
+    public void renewRecordFiles() {
+        // shape 1 × peakNumber
+        double[] tretMethylationLevels = this.parameters.getTretMethylation();
+        double[] ctrlMethylationLevels = this.parameters.getCtrlMethylation();
+        double[] tretExpressions = this.parameters.getTretBkgExp();
+        double[] ctrlExpressions = this.parameters.getCtrlBkgExp();
 
-        if (this.ctrlIPOverdispersionList == null)
-            this.ctrlIPOverdispersionList = new ArrayList<>();
-        this.ctrlIPOverdispersionList.add(this.parameters.getCtrlIPOverdispersion());
-        if (this.ctrlINPUTOverdispersionList == null)
-            this.ctrlINPUTOverdispersionList = new ArrayList<>();
-        this.ctrlINPUTOverdispersionList.add(this.parameters.getCtrlINPUTOverdispersion());
+        CountDownLatch countDownLatch = new CountDownLatch(this.peakNumber);
+        FileRecordTask taskMaker = ((tretMeth, ctrlMeth, tretExp, ctrlExp, idx) -> () -> {
+            BufferedWriter bfw = null;
+            File targetFile = new File(this.tmpDir, idx+".txt");
+            try {
+                bfw = new BufferedWriter(new FileWriter(targetFile, true));
+                String newLine = String.join("\t", new String[] {this.df.format(tretMeth), this.df.format(ctrlMeth),
+                                                                           this.df.format(tretExp), this.df.format(ctrlExp)});
+                bfw.write(newLine);
+                bfw.newLine();
+            } catch (IOException ie) {
+                ie.printStackTrace();
+            } finally {
+                countDownLatch.countDown();
+                if (bfw != null) {
+                    try {
+                        bfw.close();
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                }
+            }
+        });
 
-        if (this.tretMethyLationList == null)
-            this.tretMethyLationList = new ArrayList<>();
-        this.tretMethyLationList.add(this.parameters.getTretMethylation());
-        if (this.ctrlMethylationList == null)
-            this.ctrlMethylationList = new ArrayList<>();
-        this.ctrlMethylationList.add(this.parameters.getCtrlMethylation());
+        double tretMethLevel, ctrlMethLevel, tretExpression, ctrlExpression;
+        Runnable runnable;
+        for (int peakIdx=0; peakIdx<this.peakNumber; peakIdx++) {
+            tretMethLevel = tretMethylationLevels[peakIdx];
+            ctrlMethLevel = ctrlMethylationLevels[peakIdx];
+            tretExpression = tretExpressions[peakIdx];
+            ctrlExpression = ctrlExpressions[peakIdx];
 
-        if (this.nonspecificEnrichList == null)
-            this.nonspecificEnrichList = new ArrayList<>();
-        this.nonspecificEnrichList.add(this.parameters.getNonspecificEnrichment());
+            runnable = taskMaker.createTask(tretMethLevel, ctrlMethLevel, tretExpression, ctrlExpression, peakIdx);
+            this.executorService.submit(runnable);
+        }
 
-        if (this.tretBkgExpList == null)
-            this.tretBkgExpList = new ArrayList<>();
-        this.tretBkgExpList.add(this.parameters.getTretBkgExp());
-        if (this.ctrlBkgExpList == null)
-            this.ctrlBkgExpList = new ArrayList<>();
-        this.ctrlBkgExpList.add(this.parameters.getCtrlBkgExp());
-
-        if (this.tretNonPeakExpList == null)
-            this.tretNonPeakExpList = new ArrayList<>();
-        this.tretNonPeakExpList.add(this.parameters.getTretNonPeakBkgExp());
-        if (this.ctrlNonPeakExpList == null)
-            this.ctrlNonPeakExpList = new ArrayList<>();
-        this.ctrlNonPeakExpList.add(this.parameters.getCtrlNonPeakBkgExp());
+        try {
+            countDownLatch.await();
+        } catch (InterruptedException ie) {
+            ie.printStackTrace();
+            this.executorService.shutdown();
+        }
     }
 
     /**
-     * use the first-time sampling result to regress pseudo prior for each parameters
+     * quantify methylation level and expression for each peak
      */
-    protected abstract void setModelParameterPseudoPrior();
+    public void quantify() {
+        double[] tretIPOverdispersions = this.parameters.getTretIPOverdispersion();
+        double[] tretINPUTOverdispersions = this.parameters.getTretINPUTOverdispersion();
+        double[] ctrlIPOverdispersions = this.parameters.getCtrlIPOverdispersion();
+        double[] ctrlINPUTOverdispersions = this.parameters.getCtrlINPUTOverdispersion();
 
-    /**
-     * cleaning up sampling result to save memory
-     */
-    protected void cleanUpSamplingList() {
-        if (this.tretBkgExpList == null)
-            return;
-        this.tretMethyLationList.clear();
-        this.ctrlMethylationList.clear();
-        this.tretBkgExpList.clear();
-        this.ctrlBkgExpList.clear();
-        this.tretNonPeakExpList.clear();
-        this.ctrlNonPeakExpList.clear();
-        this.tretIPOverdispersionList.clear();
-        this.tretINPUTOverdispersionList.clear();
-        this.ctrlIPOverdispersionList.clear();
-        this.ctrlINPUTOverdispersionList.clear();
-        this.nonspecificEnrichList.clear();
+        double quantifiedTretIPOverdispersion = this.calcMedian(tretIPOverdispersions);
+        double quantifiedTretINPUTOverdispersion = this.calcMedian(tretINPUTOverdispersions);
+        double quantifiedCtrlIPOverdispersion = this.calcMedian(ctrlIPOverdispersions);
+        double quantifiedCtrlINPUTOverdispersion = this.calcMedian(ctrlINPUTOverdispersions);
+        this.parameters.setOverdispersions(quantifiedTretIPOverdispersion, quantifiedTretINPUTOverdispersion,
+                                           quantifiedCtrlIPOverdispersion, quantifiedCtrlINPUTOverdispersion);
+        CountDownLatch countDownLatch = new CountDownLatch(this.peakNumber);
+
+        double[] quantifiedTretMethLevels = new double[this.peakNumber];
+        double[] quantifiedCtrlMethLevels = new double[this.peakNumber];
+        double[] quantifiedTretExpressions = new double[this.peakNumber];
+        double[] quantifiedCtrlExpressions = new double[this.peakNumber];
+        QuantificationTask taskMaker = (idx -> () -> {
+            File targetFile = new File(this.tmpDir, idx+".txt");
+            BufferedReader bfr = null;
+            double[] tretMethValues, ctrlMethValues, tretExpValues, ctrlExpValues;
+
+            try {
+                bfr = new BufferedReader(new InputStreamReader(new FileInputStream(targetFile)));
+                tretMethValues = new double[this.samplingTime];
+                ctrlMethValues = new double[this.samplingTime];
+                tretExpValues = new double[this.samplingTime];
+                ctrlExpValues = new double[this.samplingTime];
+
+                int lineNum = 0;
+                String line = "";
+                String[] info;
+                double tretMeth, ctrlMeth, tretExp, ctrlExp;
+                while (line!=null) {
+                    line = bfr.readLine();
+                    if (line!=null) {
+                        info = line.split("\t");
+                        tretMeth = Double.valueOf(info[0]);
+                        ctrlMeth = Double.valueOf(info[1]);
+                        tretExp = Double.valueOf(info[2]);
+                        ctrlExp = Double.valueOf(info[3]);
+
+                        tretMethValues[lineNum] = tretMeth;
+                        ctrlMethValues[lineNum] = ctrlMeth;
+                        tretExpValues[lineNum] = tretExp;
+                        ctrlExpValues[lineNum] = ctrlExp;
+                    }
+                }
+
+                double tretMethylationValue = this.calcMedian(tretMethValues);
+                double ctrlMethylationValue = this.calcMedian(ctrlMethValues);
+                double tretExpressionValue = this.calcMedian(tretExpValues);
+                double ctrlExpressionValue = this.calcMedian(ctrlExpValues);
+                this.lock.lock();
+                quantifiedTretMethLevels[idx] = tretMethylationValue;
+                quantifiedCtrlMethLevels[idx] = ctrlMethylationValue;
+                quantifiedTretExpressions[idx] = tretExpressionValue;
+                quantifiedCtrlExpressions[idx] = ctrlExpressionValue;
+            } catch (IOException ie) {
+                ie.printStackTrace();
+            } finally {
+                countDownLatch.countDown();
+                this.lock.unlock();
+                if (bfr!=null) {
+                    try {
+                        bfr.close();
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                }
+                tretMethValues = null;
+                ctrlMethValues = null;
+                tretExpValues = null;
+                ctrlExpValues = null;
+            }
+        });
+
+        Runnable runnable;
+        for (int peakIdx=0; peakIdx<this.peakNumber; peakIdx++) {
+            runnable = taskMaker.createTask(peakIdx);
+            this.executorService.submit(runnable);
+        }
+
+        try {
+            countDownLatch.await();
+        } catch (InterruptedException ie) {
+            ie.printStackTrace();
+        } finally {
+            this.executorService.shutdown();
+        }
+        this.parameters.setQuantifiedTretMethLevel(quantifiedTretMethLevels);
+        this.parameters.setQuantifiedCtrlMethLevel(quantifiedCtrlMethLevels);
+        this.parameters.setQuantifiedTretExpression(quantifiedTretExpressions);
+        this.parameters.setQuantifiedCtrlExpression(quantifiedCtrlExpressions);
     }
 
     /**
-     * release redundant instance for saving memory
+     * calculate median values
+     * @param values array
+     * @return median
      */
-    protected void helpGC() {
-        this.cleanUpSamplingList();
-        this.tretBkgExpList = null;
-        this.ctrlBkgExpList = null;
-        this.tretNonPeakExpList = null;
-        this.ctrlNonPeakExpList = null;
-        this.tretMethyLationList = null;
-        this.ctrlMethylationList = null;
-        this.nonspecificEnrichList = null;
-        this.tretIPOverdispersionList = null;
-        this.tretINPUTOverdispersionList = null;
-        this.ctrlIPOverdispersionList = null;
-        this.ctrlINPUTOverdispersionList = null;
-        this.treatmentIPOverdispersion = null;
-        this.treatmentINPUTOverdispersion = null;
-        this.controlIPOverdispersion = null;
-        this.controlINPUTOverdispersion = null;
-        this.treatmentMethylationLevel = null;
-        this.controlMethylationLevel = null;
-        this.treatmentBkgExp = null;
-        this.controlBkgExp = null;
+    public double calcMedian(double[] values) {
+        if (values.length == 1)
+            return values[0];
+        values = Arrays.stream(values).skip(this.burnIn).toArray();
+        Arrays.sort(values);
+        int medianIdx = values.length / 2;
+        if (values.length % 2 == 0)
+            return (values[medianIdx-1] + values[medianIdx]) * 0.5;
+        else
+            return values[medianIdx];
+    }
+
+    public int[][] getTreatmentIPReads() {
+        return this.treatmentIPReads;
+    }
+
+    public int[][] getTreatmentINPUTReads() {
+        return this.treatmentINPUTReads;
+    }
+
+    public int[][] getControlIPReads() {
+        return this.controlIPReads;
+    }
+
+    public int[][] getControlINPUTReads() {
+        return this.controlINPUTReads;
+    }
+
+    public int getTretIndividualNumber() {
+        return this.tretIndividualNumber;
+    }
+
+    public int getCtrlIndividualNumber() {
+        return this.ctrlIndividualNumber;
+    }
+
+    public BackgroundExpressionSampler getTretBackgroundExpressionSampler(int peakIdx) {
+        return this.treatmentBackgroundExpressionSamplers[peakIdx];
+    }
+
+    public BackgroundExpressionSampler getCtrlBackgroundExpressionSampler(int peakIdx) {
+        return this.controlBackgroundExpressionSamplers[peakIdx];
+    }
+
+    public MethylationLevelSampler getTretMethylationLevelSampler() {
+        return this.tretMethylationLevelSampler;
+    }
+
+    public MethylationLevelSampler getCtrlMethylationLevelSampler() {
+        return this.ctrlMethylationLevelSampler;
     }
 }
